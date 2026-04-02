@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}TruAni{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/fonts.css">
+    <link rel="stylesheet" href="/static/style.css?v=48">
+    <script src="/static/js/theme.js"></script>
+    <script>if('scrollRestoration' in history) history.scrollRestoration = 'manual'; window.scrollTo(0,0);</script>
+</head>
+<body>
+    {% if user is defined and user %}
+    <nav class="navbar">
+        <div class="nav-inner">
+            <a href="/" class="nav-brand">
+                <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                    <!-- head + ears as one continuous line -->
+                    <path d="M10,52 Q6,38 10,28 L7,8 L22,22 Q27,18 32,18 Q37,18 42,22 L57,8 L54,28 Q58,38 54,52 Q44,58 32,58 Q20,58 10,52 Z"/>
+                    <!-- inner ears -->
+                    <line x1="11" y1="22" x2="20" y2="24" stroke-width="1.5"/>
+                    <line x1="53" y1="22" x2="44" y2="24" stroke-width="1.5"/>
+                    <!-- heavy-lidded anime eyes -->
+                    <path d="M15,34 L27,34" stroke-width="3"/>
+                    <path d="M15,34 Q15,42 21,42 Q27,42 27,34" stroke-width="2"/>
+                    <path d="M37,34 L49,34" stroke-width="3"/>
+                    <path d="M37,34 Q37,42 43,42 Q49,42 49,34" stroke-width="2"/>
+                    <!-- pupils -->
+                    <ellipse cx="21" cy="38" rx="3" ry="2.5" fill="currentColor" stroke="none"/>
+                    <ellipse cx="43" cy="38" rx="3" ry="2.5" fill="currentColor" stroke="none"/>
+                    <!-- eye shine -->
+                    <circle cx="19.5" cy="37" r="1.2" fill="var(--color-bg-raised)" stroke="none"/>
+                    <circle cx="41.5" cy="37" r="1.2" fill="var(--color-bg-raised)" stroke="none"/>
+                    <!-- tiny nose -->
+                    <circle cx="32" cy="45" r="0.8" fill="currentColor" stroke="none"/>
+                    <!-- smug ∧ mouth -->
+                    <path d="M27,49 L32,46 L37,49" stroke-width="1.8"/>
+                    <!-- whiskers -->
+                    <line x1="3" y1="38" x2="15" y2="40" stroke-width="1.5"/>
+                    <line x1="4" y1="44" x2="15" y2="43" stroke-width="1.5"/>
+                    <line x1="61" y1="38" x2="49" y2="40" stroke-width="1.5"/>
+                    <line x1="60" y1="44" x2="49" y2="43" stroke-width="1.5"/>
+                </svg>
+                TruAni
+            </a>
+            <div class="nav-right">
+                <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">Anime</a>
+                <a href="/settings" class="nav-link {% if request.path == '/settings' %}active{% endif %}">Settings</a>
+                <a href="/logout" class="nav-link">Logout</a>
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+                    <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </button>
+                <button class="nav-hamburger" onclick="document.getElementById('mobile-menu').classList.toggle('open')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+            </div>
+        </div>
+        <div id="mobile-menu" class="mobile-menu">
+            <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">Anime</a>
+            <a href="/settings" class="nav-link {% if request.path == '/settings' %}active{% endif %}">Settings</a>
+            <a href="/logout" class="nav-link">Logout</a>
+        </div>
+    </nav>
+    {% endif %}
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <div id="loading-overlay"><div class="loading-spinner"></div></div>
+
+    <!-- Confirm Modal -->
+    <div id="confirm-modal" class="modal" onclick="if(event.target===this)closeConfirmModal()">
+        <div class="modal-card confirm-card">
+            <h3 id="confirm-title"></h3>
+            <p id="confirm-message" class="confirm-message"></p>
+            <div class="form-actions confirm-actions">
+                <button class="btn" onclick="closeConfirmModal()">Cancel</button>
+                <button class="btn btn-danger" id="confirm-action-btn"></button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var _confirmCallback = null;
+        function showConfirmModal(title, message, actionLabel, onConfirm) {
+            document.getElementById('confirm-title').textContent = title;
+            document.getElementById('confirm-message').textContent = message;
+            var btn = document.getElementById('confirm-action-btn');
+            btn.textContent = actionLabel;
+            _confirmCallback = onConfirm;
+            btn.onclick = function() { if (_confirmCallback) _confirmCallback(); };
+            document.getElementById('confirm-modal').classList.add('active');
+        }
+        function closeConfirmModal() {
+            document.getElementById('confirm-modal').classList.remove('active');
+            _confirmCallback = null;
+        }
+        function showToast(msg, duration = 4000) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('show');
+            clearTimeout(t._timer);
+            t._timer = setTimeout(() => t.classList.remove('show'), duration);
+        }
+
+        function setLoading(on) {
+            document.getElementById('loading-overlay').classList.toggle('active', on);
+        }
+
+        async function apiCall(url, opts = {}) {
+            opts.headers = { 'Content-Type': 'application/json', ...opts.headers };
+            const resp = await fetch(url, opts);
+            if (resp.status === 401) { window.location = '/login'; return null; }
+            return resp.json();
+        }
+
+        var _checkSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em;"><path d="M5 13l4 4L19 7"/></svg>';
+
+        function btnSuccess(btn) {
+            var orig = btn.innerHTML;
+            btn.style.minWidth = btn.offsetWidth + 'px';
+            btn.style.minHeight = btn.offsetHeight + 'px';
+            btn.disabled = true;
+            btn.innerHTML = _checkSvg;
+            setTimeout(function() {
+                btn.innerHTML = orig;
+                btn.disabled = false;
+                btn.style.minWidth = '';
+                btn.style.minHeight = '';
+            }, 2000);
+        }
+
+        function showFieldError(targetId, message, duration) {
+            clearFieldError(targetId);
+            var el = document.getElementById(targetId);
+            if (!el) return;
+            var div = document.createElement('div');
+            div.className = 'field-error';
+            div.setAttribute('role', 'alert');
+            div.setAttribute('data-field-error-for', targetId);
+            div.textContent = message;
+            el.setAttribute('aria-invalid', 'true');
+            el.parentNode.insertBefore(div, el.nextSibling);
+            var ms = duration || 5000;
+            setTimeout(function() {
+                div.classList.add('fade-out');
+                setTimeout(function() {
+                    div.remove();
+                    el.removeAttribute('aria-invalid');
+                }, 300);
+            }, ms);
+        }
+
+        function clearFieldError(targetId) {
+            var el = document.getElementById(targetId);
+            if (el) el.removeAttribute('aria-invalid');
+            document.querySelectorAll('[data-field-error-for="' + targetId + '"]').forEach(function(e) { e.remove(); });
+        }
+
+        function formatTimeAgo(isoStr) {
+            if (!isoStr) return 'Never';
+            var d = new Date(isoStr.endsWith('Z') ? isoStr : isoStr + 'Z');
+            var now = new Date();
+            var diff = Math.floor((now - d) / 1000);
+            if (diff < 60) return 'Just now';
+            if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+            if (diff < 172800) return 'Yesterday at ' + d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+            return d.toLocaleDateString([], {month:'short', day:'numeric'}) + ' at ' + d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+        }
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

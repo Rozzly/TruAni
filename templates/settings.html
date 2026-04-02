@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+{% block title %}TruAni — Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Settings</h1>
+</div>
+
+<div class="settings-layout">
+    <!-- Sidebar -->
+    <nav class="settings-sidebar">
+        <button class="settings-nav-link active" onclick="showSection('sonarr', this)">
+            <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            Sonarr
+        </button>
+        <button class="settings-nav-link" onclick="showSection('schedule', this)">
+            <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Schedule
+        </button>
+        <button class="settings-nav-link" onclick="showSection('account', this)">
+            <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Account
+        </button>
+    </nav>
+
+    <!-- Content -->
+    <div class="settings-content">
+
+        <!-- Sonarr -->
+        <div id="section-sonarr" class="settings-section">
+            <div class="settings-section-header">
+                <h2>Sonarr</h2>
+                <p>Configure your Sonarr instance for anime imports.</p>
+            </div>
+            <div class="settings-section-body">
+                <form id="form-sonarr" onsubmit="return saveSettings(event)">
+                    <div class="form-group">
+                        <label for="sonarr_url">Sonarr URL</label>
+                        <input type="url" id="sonarr_url" name="sonarr_url" value="{{ settings.sonarr_url }}" placeholder="http://localhost:8989">
+                    </div>
+                    <div class="form-group">
+                        <label for="sonarr_api_key">API Key</label>
+                        <input type="password" id="sonarr_api_key" name="sonarr_api_key" value="{{ settings.sonarr_api_key }}" placeholder="Sonarr API key">
+                    </div>
+                    <div class="form-group">
+                        <label for="sonarr_root_folder">Root Folder</label>
+                        <select id="sonarr_root_folder" name="sonarr_root_folder">
+                            {% if settings.sonarr_root_folder %}
+                            <option value="{{ settings.sonarr_root_folder }}" selected>{{ settings.sonarr_root_folder }}</option>
+                            {% else %}
+                            <option value="" disabled selected>Enter URL &amp; API key first</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="sonarr_quality_profile">Quality Profile</label>
+                        <select id="sonarr_quality_profile" name="sonarr_quality_profile">
+                            {% if settings.sonarr_quality_profile %}
+                            <option value="{{ settings.sonarr_quality_profile }}" selected>{{ settings.sonarr_quality_profile }}</option>
+                            {% else %}
+                            <option value="" disabled selected>Enter URL &amp; API key first</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="sonarr_series_type">Series Type</label>
+                            <select id="sonarr_series_type" name="sonarr_series_type">
+                                <option value="anime" {{ 'selected' if settings.sonarr_series_type == 'anime' }}>Anime</option>
+                                <option value="standard" {{ 'selected' if settings.sonarr_series_type == 'standard' }}>Standard</option>
+                                <option value="daily" {{ 'selected' if settings.sonarr_series_type == 'daily' }}>Daily</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="sonarr_monitor">Monitor</label>
+                            <select id="sonarr_monitor" name="sonarr_monitor">
+                                {% for opt in ['all','future','missing','existing','pilot','firstSeason','latestSeason','none'] %}
+                                <option value="{{ opt }}" {{ 'selected' if settings.sonarr_monitor == opt }}>{{ opt }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="toggle-row">
+                        <label>Season Folders</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="sonarr_season_folder" name="sonarr_season_folder"
+                                   {{ 'checked' if settings.sonarr_season_folder in ('true','True','1') }}>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="toggle-row">
+                        <label>Search on Add</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="sonarr_search_on_add" name="sonarr_search_on_add"
+                                   {{ 'checked' if settings.sonarr_search_on_add in ('true','True','1') }}>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-top:0.5rem;">
+                        <label for="sonarr_tags">Tags <span class="hint">(comma separated)</span></label>
+                        <input type="text" id="sonarr_tags" name="sonarr_tags" value="{{ settings.sonarr_tags }}" placeholder="anime, seasonal">
+                    </div>
+                </form>
+            </div>
+            <div class="settings-section-footer">
+                <div class="settings-status">
+                    <span class="dot {{ 'ok' if sonarr_ok else 'err' }}"></span>
+                    <span id="sonarr-status-text">{{ sonarr_msg }}</span>
+                </div>
+                <div style="display:flex;gap:0.375rem;">
+                    <button class="btn btn-sm" onclick="testSonarr()">Test</button>
+                    <button class="btn btn-sm btn-primary" onclick="submitForm('form-sonarr')">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schedule -->
+        <div id="section-schedule" class="settings-section" style="display:none;">
+            <div class="settings-section-header">
+                <h2>Refresh Schedule</h2>
+                <p>How often TruAni fetches new anime data from AniList and refreshes TVDB mappings.</p>
+            </div>
+            <div class="settings-section-body">
+                <form id="form-schedule" onsubmit="return saveSettings(event)">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="refresh_frequency">Frequency</label>
+                            <select id="refresh_frequency" name="refresh_frequency">
+                                <option value="every_6h" {{ 'selected' if settings.refresh_frequency == 'every_6h' }}>Every 6 hours</option>
+                                <option value="every_12h" {{ 'selected' if settings.refresh_frequency == 'every_12h' }}>Every 12 hours</option>
+                                <option value="daily" {{ 'selected' if settings.refresh_frequency == 'daily' }}>Daily</option>
+                                <option value="weekly" {{ 'selected' if settings.refresh_frequency == 'weekly' }}>Weekly</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="refresh_time">Time</label>
+                            <input type="time" id="refresh_time" name="refresh_time" value="{{ settings.refresh_time }}">
+                        </div>
+                    </div>
+                    <div class="form-group" id="day-group" style="display:none;">
+                        <label for="refresh_day">Day of week</label>
+                        <select id="refresh_day" name="refresh_day">
+                            {% for d in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
+                            <option value="{{ d }}" {{ 'selected' if settings.refresh_day == d }}>{{ d|capitalize }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="schedule-summary" id="schedule-summary"></div>
+                </form>
+            </div>
+            <div class="settings-section-footer">
+                <div></div>
+                <button class="btn btn-sm btn-primary" onclick="submitForm('form-schedule')">Save</button>
+            </div>
+        </div>
+
+        <!-- Account -->
+        <div id="section-account" class="settings-section" style="display:none;">
+            <div class="settings-section-header">
+                <h2>Account</h2>
+                <p>Update your login credentials.</p>
+            </div>
+            <div class="settings-section-body">
+                <form id="form-user" onsubmit="return saveUser(event)">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" value="{{ user }}" autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="new_password">New Password <span class="hint">(leave blank to keep)</span></label>
+                        <input type="password" id="new_password" name="new_password" autocomplete="new-password" placeholder="New password">
+                    </div>
+                    <hr>
+                    <div class="form-group">
+                        <label for="current_password">Current Password <span class="hint">(required)</span></label>
+                        <input type="password" id="current_password" name="current_password" autocomplete="current-password">
+                    </div>
+                </form>
+            </div>
+            <div class="settings-section-footer">
+                <div></div>
+                <button class="btn btn-sm btn-primary" onclick="document.getElementById('form-user').requestSubmit()">Update</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Schedule UI logic -->
+<script>
+    (function() {
+        var freq = document.getElementById('refresh_frequency');
+        var dayGroup = document.getElementById('day-group');
+        var summary = document.getElementById('schedule-summary');
+        var timeInput = document.getElementById('refresh_time');
+        var dayInput = document.getElementById('refresh_day');
+
+        function updateScheduleUI() {
+            var f = freq.value;
+            dayGroup.style.display = f === 'weekly' ? '' : 'none';
+
+            var t = timeInput.value || '06:00';
+            var parts = t.split(':');
+            var h = parseInt(parts[0]), m = parts[1];
+            var ampm = h >= 12 ? 'PM' : 'AM';
+            var h12 = h % 12 || 12;
+            var timeStr = h12 + ':' + m + ' ' + ampm;
+
+            var text = '';
+            if (f === 'every_6h') text = 'Refreshes every 6 hours starting at ' + timeStr;
+            else if (f === 'every_12h') text = 'Refreshes every 12 hours starting at ' + timeStr;
+            else if (f === 'daily') text = 'Refreshes daily at ' + timeStr;
+            else if (f === 'weekly') text = 'Refreshes every ' + dayInput.options[dayInput.selectedIndex].text + ' at ' + timeStr;
+            summary.textContent = text;
+        }
+
+        freq.addEventListener('change', updateScheduleUI);
+        timeInput.addEventListener('change', updateScheduleUI);
+        dayInput.addEventListener('change', updateScheduleUI);
+        updateScheduleUI();
+    })();
+</script>
+<script>
+    function showSection(id, el) {
+        document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
+        document.getElementById('section-' + id).style.display = '';
+        document.querySelectorAll('.settings-nav-link').forEach(l => l.classList.remove('active'));
+        el.classList.add('active');
+    }
+
+    function submitForm(formId) {
+        document.getElementById(formId).requestSubmit();
+    }
+
+    async function saveSettings(e) {
+        e.preventDefault();
+        const form = e.target, data = {};
+        const btn = form.closest('.settings-section').querySelector('.settings-section-footer .btn-primary');
+        for (const input of form.elements) {
+            if (!input.name) continue;
+            if (input.type === 'checkbox') data[input.name] = input.checked ? 'true' : 'false';
+            else data[input.name] = input.value;
+        }
+        try {
+            const resp = await apiCall('/api/settings', { method:'POST', body:JSON.stringify(data) });
+            if (resp && resp.status === 'ok' && btn) btnSuccess(btn);
+            else if (resp) showToast(resp.message);
+        } catch (e) { showToast('Error: ' + e.message); }
+        return false;
+    }
+
+    async function saveUser(e) {
+        e.preventDefault();
+        clearFieldError('current_password');
+        clearFieldError('new_password');
+        const current = document.getElementById('current_password').value;
+        const newPass = document.getElementById('new_password').value;
+        if (!current) {
+            showFieldError('current_password', 'Current password is required');
+            return false;
+        }
+        if (newPass && newPass.length < 8) {
+            showFieldError('new_password', 'Password must be at least 8 characters');
+            return false;
+        }
+        const data = {
+            username: document.getElementById('username').value,
+            password: newPass,
+            current_password: current,
+        };
+        try {
+            const resp = await apiCall('/api/settings/user', { method:'POST', body:JSON.stringify(data) });
+            if (resp && resp.status === 'ok') {
+                var btn = document.querySelector('#section-account .settings-section-footer .btn-primary');
+                if (btn) btnSuccess(btn);
+                document.getElementById('current_password').value = '';
+                document.getElementById('new_password').value = '';
+            } else if (resp && resp.message) {
+                if (resp.message.toLowerCase().includes('password')) {
+                    showFieldError('current_password', resp.message);
+                } else {
+                    showFieldError('username', resp.message);
+                }
+            }
+        } catch (e) { showToast('Error: ' + e.message); }
+        return false;
+    }
+
+    async function testSonarr() {
+        var testBtn = document.querySelector('#section-sonarr .settings-section-footer .btn:not(.btn-primary)');
+        try {
+            const resp = await apiCall('/api/settings/test-sonarr', {
+                method:'POST',
+                body: JSON.stringify({
+                    sonarr_url: document.getElementById('sonarr_url').value,
+                    sonarr_api_key: document.getElementById('sonarr_api_key').value,
+                })
+            });
+            if (resp) {
+                const el = document.getElementById('sonarr-status-text');
+                const dot = el.previousElementSibling;
+                el.textContent = resp.message;
+                dot.className = 'dot ' + (resp.connected ? 'ok' : 'err');
+                if (resp.connected) {
+                    if (testBtn) btnSuccess(testBtn);
+                    loadSonarrOptions();
+                } else {
+                    showToast('Failed: ' + resp.message);
+                }
+            }
+        } catch (e) { showToast('Error: ' + e.message); }
+    }
+
+    async function loadSonarrOptions() {
+        var url = document.getElementById('sonarr_url').value.trim();
+        var key = document.getElementById('sonarr_api_key').value.trim();
+        if (!url || !key) return;
+
+        var resp = await apiCall('/api/settings/sonarr-options', {
+            method: 'POST',
+            body: JSON.stringify({ sonarr_url: url, sonarr_api_key: key })
+        });
+        if (!resp || resp.status !== 'ok') return;
+
+        var rfSelect = document.getElementById('sonarr_root_folder');
+        var currentRf = rfSelect.value;
+        rfSelect.innerHTML = '';
+        if (resp.root_folders.length === 0) {
+            rfSelect.innerHTML = '<option value="" disabled selected>No root folders found</option>';
+        } else {
+            resp.root_folders.forEach(function(rf) {
+                var opt = document.createElement('option');
+                opt.value = rf.path;
+                var gb = Math.round(rf.freeSpace / 1073741824);
+                opt.textContent = rf.path + (gb > 0 ? ' (' + gb + ' GB free)' : '');
+                if (rf.path === currentRf) opt.selected = true;
+                rfSelect.appendChild(opt);
+            });
+            if (!currentRf && resp.root_folders.length > 0) rfSelect.selectedIndex = 0;
+        }
+
+        var qpSelect = document.getElementById('sonarr_quality_profile');
+        var currentQp = qpSelect.value;
+        qpSelect.innerHTML = '';
+        if (resp.quality_profiles.length === 0) {
+            qpSelect.innerHTML = '<option value="" disabled selected>No profiles found</option>';
+        } else {
+            resp.quality_profiles.forEach(function(qp) {
+                var opt = document.createElement('option');
+                opt.value = qp.name;
+                opt.textContent = qp.name;
+                if (qp.name === currentQp) opt.selected = true;
+                qpSelect.appendChild(opt);
+            });
+            if (!currentQp && resp.quality_profiles.length > 0) qpSelect.selectedIndex = 0;
+        }
+    }
+
+    // Load options on page load if URL+key are already set
+    (function() {
+        var url = document.getElementById('sonarr_url').value.trim();
+        var key = document.getElementById('sonarr_api_key').value.trim();
+        if (url && key) loadSonarrOptions();
+
+        // Reload when URL or API key fields lose focus
+        document.getElementById('sonarr_url').addEventListener('blur', loadSonarrOptions);
+        document.getElementById('sonarr_api_key').addEventListener('blur', loadSonarrOptions);
+    })();
+</script>
+{% endblock %}

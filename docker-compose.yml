@@ -1,0 +1,17 @@
+services:
+  truani:
+    build: .
+    container_name: truani
+    restart: unless-stopped
+    ports:
+      - "5656:5656"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5656/login')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

@@ -1,0 +1,1568 @@
+{% extends "base.html" %}
+{% block title %}TruAni — {{ season }} {{ year }}{% endblock %}
+
+{% macro anime_shared_cells(anime) %}
+{% set has_tvdb = anime.tvdb_id is not none and anime.tvdb_id %}
+{% set display = (anime.title_english or anime.tvdb_title or anime.title_romaji)|display_title %}
+{% set display_romaji = (anime.title_romaji or '')|display_title %}
+<td class="col-cover">
+    {% if anime.cover_url %}
+    <img src="{{ anime.cover_url }}" alt="" class="row-cover" loading="lazy">
+    {% endif %}
+</td>
+<td class="col-title">
+    <div class="title-cell">
+        <span class="title-main"><span class="title-scroll">{{ display }}</span></span>
+        {% if display_romaji and display_romaji != display %}
+        <span class="title-sub"><span class="title-scroll">{{ display_romaji }}</span></span>
+        {% endif %}
+    </div>
+</td>
+<td class="col-type">
+    <span class="badge badge-{{ anime.format|lower }}">{{ anime.format }}</span>
+</td>
+<td class="col-season">
+    {% if anime.season_number and anime.season_number > 1 %}
+    <span class="badge badge-sequel">S{{ anime.season_number }}</span>
+    {% else %}
+    <span class="badge badge-new">New</span>
+    {% endif %}
+</td>
+<td class="col-eps">
+    <span class="eps-value">{{ anime.episodes or '—' }}</span>
+</td>
+<td class="col-tvdb">
+    {% if has_tvdb %}
+    <span class="tvdb-id">{{ anime.tvdb_id }}</span>
+    {% else %}
+    <span class="tvdb-unmatched">—</span>
+    {% endif %}
+</td>
+<td class="col-status">
+    {% if anime.sonarr_status in ('added', 'exists') %}
+    <span class="badge badge-added">in sonarr</span>
+    {% elif has_tvdb %}
+    <span class="badge badge-mapped">ready</span>
+    {% else %}
+    <span class="badge badge-unmapped">unmatched</span>
+    {% endif %}
+</td>
+{% endmacro %}
+
+{% block content %}
+<div class="season-tabs" id="season-tabs">
+    {% set ns = namespace(prev_past=None) %}
+    {% for tab in tabs %}
+    {% if ns.prev_past is not none and ns.prev_past != tab.is_past %}
+    <span class="season-divider"></span>
+    {% endif %}
+    <a href="/?season={{ tab.season }}&year={{ tab.year }}"
+       class="season-tab {{ 'active' if tab.active }} {{ 'past' if tab.is_past }}"
+       {% if tab.active %}id="active-season-tab"{% endif %}>
+        {{ tab.label }}
+        {% if tab.is_current %}<span class="tab-badge current">now</span>
+        {% elif tab.is_next %}<span class="tab-badge upcoming">next</span>
+        {% endif %}
+    </a>
+    {% set ns.prev_past = tab.is_past %}
+    {% endfor %}
+</div>
+<script>
+    (function() {
+        var el = document.getElementById('active-season-tab');
+        if (el) el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'instant' });
+        document.querySelectorAll('.relative-time').forEach(function(span) {
+            span.textContent = formatTimeAgo(span.dataset.iso);
+        });
+    })();
+</script>
+
+<!-- Context Strip: stats + status (scrolls away) -->
+<div class="context-strip" id="context-strip">
+    <div class="context-stats">
+        <span class="toolbar-stat" data-filter="total">
+            <span class="stat-num" id="stat-total">{{ stats.total }}</span>
+            <span class="stat-label">Total</span>
+        </span>
+        <span class="toolbar-stat-sep">&middot;</span>
+        <span class="toolbar-stat" data-filter="mapped">
+            <span class="stat-num text-success" id="stat-mapped">{{ stats.mapped }}</span>
+            <span class="stat-label">Matched</span>
+        </span>
+        <span class="toolbar-stat-sep">&middot;</span>
+        <span class="toolbar-stat" data-filter="unmapped">
+            <span class="stat-num text-warning" id="stat-unmapped">{{ stats.unmapped }}</span>
+            <span class="stat-label">No TVDB</span>
+        </span>
+        <span class="toolbar-stat-sep">&middot;</span>
+        <span class="toolbar-stat" data-filter="added">
+            <span class="stat-num text-info" id="stat-added">{{ stats.added }}</span>
+            <span class="stat-label">In Sonarr</span>
+        </span>
+    </div>
+    <div class="toolbar-status">
+        <span class="dot {{ 'ok' if sonarr_ok else 'err' }}"></span>
+        <span>Sonarr</span>
+        {% if last_refresh %}
+        <span class="toolbar-stat-sep">&middot;</span>
+        <span id="last-refresh-text">
+            <span class="relative-time" data-iso="{{ last_refresh }}"></span>
+        </span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Action Bar: search + actions (becomes sticky, merges with table) -->
+<div class="action-bar-sticky" id="action-bar-sticky">
+<div class="action-bar" id="action-bar">
+    <div class="action-bar-left">
+        <div class="toolbar-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="table-search" placeholder="Filter anime..." autocomplete="off">
+        </div>
+    </div>
+    <div class="action-bar-right">
+        <button class="btn btn-danger" onclick="confirmIgnoreSelected()" id="btn-ignore-selected" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            Ignore<span class="btn-count" id="ignore-count" style="display:none"></span>
+        </button>
+        <button class="btn btn-primary" onclick="syncSelected()" id="btn-sync" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add to Sonarr<span class="btn-count" id="sync-count" style="display:none"></span>
+        </button>
+        <span class="header-actions-divider"></span>
+        <div class="btn-split">
+            <button class="btn" onclick="doRefresh()" id="btn-refresh">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                Scan
+            </button>
+            <button class="btn btn-split-toggle" onclick="toggleScanMenu(event)" title="More scan options">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="btn-split-menu" id="scan-menu">
+                <button onclick="doFreshRefresh()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15 6.7L3 16"/></svg>
+                    Fresh Scan
+                    <span class="btn-split-hint">Clears cache, re-fetches everything</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+</div><!-- /action-bar-sticky -->
+
+{% if anime_list %}
+<div class="table-wrapper" id="table-wrapper">
+    <table class="data-table" id="anime-table">
+        <thead>
+            <tr>
+                <th class="col-check" style="width:3%"><input type="checkbox" id="select-all" title="Select all mapped"></th>
+                <th class="col-cover" style="width:4%"></th>
+                <th class="sortable col-title" style="width:30%" data-col="title">Title</th>
+                <th class="sortable col-type" style="width:6%" data-col="format">Type</th>
+                <th class="col-season" style="width:6%">Season</th>
+                <th class="sortable col-eps" style="width:4%" data-col="episodes">Eps</th>
+                <th class="sortable col-tvdb" style="width:7%" data-col="tvdb">TVDB ID</th>
+                <th class="col-status" style="width:9%">Status</th>
+                <th class="col-actions" style="width:7%">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for anime in anime_list %}
+            {% set has_tvdb = anime.tvdb_id is not none and anime.tvdb_id %}
+            <tr data-anilist-id="{{ anime.anilist_id }}"
+                data-title="{{ (anime.title_english or anime.title_romaji)|lower }}"
+                data-format="{{ anime.format }}"
+                data-episodes="{{ anime.episodes or 0 }}"
+                data-tvdb="{{ anime.tvdb_id or 0 }}"
+                data-sonarr="{{ anime.sonarr_status }}"
+                data-season="{{ anime.season_number or 1 }}"
+                class="clickable-row {{ '' if has_tvdb else 'row-unmapped' }}"
+                onclick="onRowClick(event, {{ anime.anilist_id }})">
+                <td class="col-check" onclick="toggleRowCheck(event, {{ anime.anilist_id }})">
+                    <input type="checkbox" class="row-check" value="{{ anime.anilist_id }}">
+                </td>
+                {{ anime_shared_cells(anime) }}
+                <td class="col-actions">
+                    <div class="row-actions">
+                        <button class="action-btn" onclick="editTvdb({{ anime.anilist_id }}, {{ anime.tvdb_id or 'null' }})" title="Edit TVDB ID">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                        </button>
+                        <button class="action-btn action-btn-danger" onclick="ignoreSingle({{ anime.anilist_id }})" title="Ignore">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    No anime data for <strong>{{ season }} {{ year }}</strong>. Click <strong>Scan</strong> to fetch.
+</div>
+{% endif %}
+
+<div class="ignored-section" id="ignored-section" {% if not ignored_list %}style="display:none"{% endif %}>
+    <div class="ignored-header">
+        <h2>Ignored (<span id="ignored-count-label">{{ ignored_list|length }}</span>)</h2>
+    </div>
+    <div class="table-wrapper ignored-table">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th class="col-cover" style="width:4%"></th>
+                    <th class="col-title" style="width:33%">Title</th>
+                    <th class="col-type" style="width:6%">Type</th>
+                    <th class="col-season" style="width:6%">Season</th>
+                    <th class="col-eps" style="width:4%">Eps</th>
+                    <th class="col-tvdb" style="width:7%">TVDB ID</th>
+                    <th class="col-status" style="width:9%">Status</th>
+                    <th class="col-actions" style="width:7%">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="ignored-tbody">
+                {% for anime in ignored_list %}
+                <tr data-anilist-id="{{ anime.anilist_id }}">
+                    {{ anime_shared_cells(anime) }}
+                    <td class="col-actions">
+                        <button class="action-btn" onclick="restoreSingle({{ anime.anilist_id }})" title="Restore">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- TVDB Match Modal -->
+<div id="tvdb-modal" class="modal" onclick="if(event.target===this)closeTvdbModal()">
+    <div class="modal-card tvdb-match-card">
+        <button class="modal-close" onclick="closeTvdbModal()">&times;</button>
+        <h3>Match TVDB ID</h3>
+        <p id="modal-anime-title" class="modal-subtitle"></p>
+
+        <!-- Current mapping display -->
+        <div id="tvdb-current" class="tvdb-current" style="display:none;"></div>
+
+        <!-- TVDB ID input -->
+        <div class="form-group tvdb-input-group">
+            <label for="modal-tvdb-input">TVDB ID</label>
+            <div class="modal-input-row">
+                <input type="number" id="modal-tvdb-input" placeholder="Enter TVDB ID" min="1">
+                <button class="btn btn-sm btn-accent" onclick="verifyManualTvdb()">Verify</button>
+            </div>
+        </div>
+        <div id="modal-verify-preview" class="tvdb-verify-preview" style="display:none;">
+            <div id="modal-verify-content"></div>
+        </div>
+
+        <!-- Actions -->
+        <div class="form-actions tvdb-match-actions">
+            <button class="btn btn-danger" onclick="clearTvdb()" id="modal-clear-btn" style="display:none;">Clear</button>
+            <div class="tvdb-match-actions-right">
+                <button class="btn" onclick="closeTvdbModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveTvdb()" id="modal-save-btn">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Refresh Progress Modal -->
+<div id="refresh-modal" class="modal">
+    <div class="modal-card refresh-card">
+        <div class="refresh-header">
+            <div class="refresh-icon-wrap" id="refresh-icon-wrap">
+                <svg class="refresh-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            </div>
+            <div>
+                <h3 id="refresh-title">Scanning...</h3>
+                <p id="refresh-subtitle" class="modal-subtitle">Starting</p>
+            </div>
+        </div>
+        <div class="refresh-progress-track">
+            <div class="refresh-progress-bar" id="refresh-bar" style="width:0%"></div>
+        </div>
+        <div class="refresh-stats" id="refresh-stats">
+            <div class="refresh-stat"><span id="rs-found">-</span><span class="refresh-stat-label">Found</span></div>
+            <div class="refresh-stat"><span id="rs-mapped" class="text-success">-</span><span class="refresh-stat-label">Mapped</span></div>
+            <div class="refresh-stat"><span id="rs-unmapped" class="text-warning">-</span><span class="refresh-stat-label">Unmapped</span></div>
+        </div>
+        <div class="refresh-log" id="refresh-log"></div>
+        <div class="form-actions" id="refresh-actions">
+            <button class="btn" id="refresh-cancel-btn" onclick="cancelRefresh()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Sync Progress Modal -->
+<div id="sync-modal" class="modal">
+    <div class="modal-card refresh-card">
+        <div class="refresh-header">
+            <div class="refresh-icon-wrap spinning" id="sync-icon-wrap">
+                <svg class="refresh-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            </div>
+            <div>
+                <h3 id="sync-title">Adding to Sonarr...</h3>
+                <p id="sync-subtitle" class="modal-subtitle">Preparing</p>
+            </div>
+        </div>
+        <div class="refresh-progress-track">
+            <div class="refresh-progress-bar" id="sync-bar" style="width:0%"></div>
+        </div>
+        <div class="refresh-stats">
+            <div class="refresh-stat"><span id="sync-added" class="text-success">0</span><span class="refresh-stat-label">Added</span></div>
+            <div class="refresh-stat"><span id="sync-skipped">0</span><span class="refresh-stat-label">Skipped</span></div>
+            <div class="refresh-stat"><span id="sync-errors" class="text-danger">0</span><span class="refresh-stat-label">Errors</span></div>
+        </div>
+        <div class="refresh-log" id="sync-log"></div>
+        <div class="form-actions" id="sync-actions">
+            <button class="btn" id="sync-cancel-btn" onclick="closeSyncModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div id="detail-modal" class="modal" onclick="if(event.target===this)closeDetail()">
+    <div class="modal-card detail-card">
+        <div class="detail-nav">
+            <button class="detail-nav-btn" id="detail-prev" onclick="detailNav(-1)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                Prev
+            </button>
+            <span class="detail-nav-title" id="detail-pos"></span>
+            <button class="detail-nav-btn" id="detail-next" onclick="detailNav(1)">
+                Next
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+        </div>
+        <div id="detail-content"></div>
+        <div class="form-actions detail-actions">
+            <a id="detail-anilist-link" href="#" target="_blank" rel="noopener" class="btn btn-accent">AniList</a>
+            <div class="detail-actions-right">
+                <button class="btn btn-danger" onclick="detailIgnore()" id="detail-ignore-btn">Ignore</button>
+                <button class="btn" onclick="closeDetail()">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Anime data for detail modal -->
+<script>
+    function escapeHtml(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    function stripSeasonSuffix(t) {
+        if (!t) return t;
+        return t
+            .replace(/\s+\d+(?:st|nd|rd|th)\s+Season\b(?:\s*:.*)?$/i, '')
+            .replace(/\s+Season\s+\d+\b(?:\s*:.*)?$/i, '')
+            .replace(/\s+(?:Part|Cour)\s+\d+\s*$/i, '')
+            .replace(/\s+act\s+[IVX]+\b.*$/i, '')
+            .replace(/\s+(?:II|III|IV|V|VI|VII|VIII|IX|X)\s*$/, '')
+            .replace(/\s+\d+\s*$/, '')
+            .trim() || t;
+    }
+
+    var ANIME_DATA = {
+    {% for anime in anime_list %}
+        {{ anime.anilist_id }}: {
+            title: {{ (anime.title_english or anime.tvdb_title or anime.title_romaji)|tojson }},
+            titleRomaji: {{ (anime.title_romaji or '')|tojson }},
+            titleNative: {{ (anime.title_native or '')|tojson }},
+            format: {{ anime.format|tojson }},
+            episodes: {{ anime.episodes|tojson }},
+            description: {{ (anime.description or '')|tojson }},
+            genres: {{ (anime.genres or '')|tojson }},
+            score: {{ anime.score|tojson }},
+            anilistUrl: {{ (anime.anilist_url or '')|tojson }},
+            coverLg: {{ (anime.cover_url_lg or anime.cover_url or '')|tojson }},
+            tvdbId: {{ anime.tvdb_id|tojson }},
+            tvdbTitle: {{ (anime.tvdb_title or '')|tojson }},
+            mappingSource: {{ (anime.mapping_source or '')|tojson }},
+            sonarrStatus: {{ anime.sonarr_status|tojson }},
+            seasonNumber: {{ (anime.season_number or 1)|tojson }},
+            displayTitle: {{ ((anime.title_english or anime.tvdb_title or anime.title_romaji)|display_title)|tojson }},
+            displayRomaji: {{ ((anime.title_romaji or '')|display_title)|tojson }}
+        },
+    {% endfor %}
+    };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function _statusBadgeHtml(sonarr, hasTvdb) {
+        if (sonarr === 'added' || sonarr === 'exists')
+            return '<span class="badge badge-added">in sonarr</span>';
+        if (hasTvdb)
+            return '<span class="badge badge-mapped">ready</span>';
+        return '<span class="badge badge-unmapped">unmatched</span>';
+    }
+
+    function _coverCellHtml(src) {
+        return '<td class="col-cover">' + (src ? '<img src="'+escapeHtml(src)+'" alt="" class="row-cover" loading="lazy">' : '') + '</td>';
+    }
+    function _titleCellHtml(title, romaji) {
+        var html = '<td class="col-title"><div class="title-cell"><span class="title-main"><span class="title-scroll">' + escapeHtml(title) + '</span></span>';
+        if (romaji && romaji !== title) html += '<span class="title-sub"><span class="title-scroll">' + escapeHtml(romaji) + '</span></span>';
+        return html + '</div></td>';
+    }
+    function _typeCellHtml(fmt) {
+        return '<td class="col-type"><span class="badge badge-' + escapeHtml(fmt.toLowerCase()) + '">' + escapeHtml(fmt) + '</span></td>';
+    }
+    function _seasonCellHtml(num) {
+        return '<td class="col-season">' + (num > 1 ? '<span class="badge badge-sequel">S'+num+'</span>' : '<span class="badge badge-new">New</span>') + '</td>';
+    }
+    function _epsCellHtml(eps) {
+        return '<td class="col-eps"><span class="eps-value">' + (eps || '—') + '</span></td>';
+    }
+    function _tvdbCellHtml(tvdbId) {
+        return '<td class="col-tvdb">' + (tvdbId ? '<span class="tvdb-id">'+tvdbId+'</span>' : '<span class="tvdb-unmatched">—</span>') + '</td>';
+    }
+    function _sharedCellsHtml(coverSrc, title, romaji, fmt, seasonNum, eps, tvdbId, sonarr) {
+        return _coverCellHtml(coverSrc) + _titleCellHtml(title, romaji) + _typeCellHtml(fmt) +
+               _seasonCellHtml(seasonNum) + _epsCellHtml(eps) + _tvdbCellHtml(tvdbId) +
+               '<td class="col-status">' + _statusBadgeHtml(sonarr, !!tvdbId) + '</td>';
+    }
+
+    var SEASON = '{{ season }}';
+    var YEAR = {{ year }};
+
+    // Row click — open detail unless clicking interactive elements
+    function onRowClick(e, anilistId) {
+        // Handle TVDB cell clicks — open TVDB link
+        var tvdbCell = e.target.closest('.col-tvdb');
+        if (tvdbCell) {
+            e.stopPropagation();
+            var tvdbId = parseInt(tvdbCell.closest('tr').dataset.tvdb);
+            if (tvdbId) openTvdbLink(e, tvdbId);
+            return;
+        }
+        if (e.target.closest('a, button, input, .row-actions, .col-actions, .col-check')) return;
+        showDetail(anilistId);
+    }
+
+    // Toggle checkbox when clicking anywhere in the check cell
+    function toggleRowCheck(e, anilistId) {
+        e.stopPropagation();
+        const cb = e.currentTarget.querySelector('.row-check');
+        if (!cb) return;
+        if (e.target !== cb) cb.checked = !cb.checked;
+        updateCount();
+    }
+
+    // Open TVDB link when clicking anywhere in the TVDB cell
+    function openTvdbLink(e, tvdbId) {
+        e.stopPropagation();
+        if (!tvdbId) return;
+        window.open('https://thetvdb.com/dereferrer/series/' + tvdbId, '_blank', 'noopener');
+    }
+
+    // Detail modal with prev/next navigation
+    let detailCurrentId = null;
+
+    function _getVisibleRowIds() {
+        return Array.from(document.querySelectorAll('#anime-table tbody tr'))
+            .filter(r => r.style.display !== 'none')
+            .map(r => parseInt(r.dataset.anilistId))
+            .filter(id => !isNaN(id));
+    }
+
+    function showDetail(anilistId) {
+        detailCurrentId = anilistId;
+        _renderDetail(anilistId);
+        document.getElementById('detail-modal').classList.add('active');
+    }
+
+    function _renderDetail(anilistId) {
+        const a = ANIME_DATA[anilistId];
+        if (!a) return;
+
+        detailCurrentId = anilistId;
+        const ids = _getVisibleRowIds();
+        const idx = ids.indexOf(anilistId);
+
+        // Nav state
+        document.getElementById('detail-prev').disabled = idx <= 0;
+        document.getElementById('detail-next').disabled = idx >= ids.length - 1 || idx === -1;
+        document.getElementById('detail-pos').textContent = idx >= 0 ? `${idx + 1} of ${ids.length}` : '';
+
+        const genres = a.genres ? a.genres.split(',').map(g => '<span class="detail-genre">' + escapeHtml(g.trim()) + '</span>').join('') : '';
+        const c = document.getElementById('detail-content');
+        c.innerHTML = `
+            <div class="detail-header">
+                ${a.coverLg ? '<img src="'+escapeHtml(a.coverLg)+'" alt="" class="detail-cover">' : ''}
+                <div class="detail-meta">
+                    <h2 class="detail-title">${escapeHtml(a.title)}</h2>
+                    ${a.titleRomaji && a.titleRomaji !== a.title ? '<div class="detail-alt">'+escapeHtml(a.titleRomaji)+'</div>' : ''}
+                    ${a.titleNative ? '<div class="detail-alt detail-native">'+escapeHtml(a.titleNative)+'</div>' : ''}
+                    <div class="detail-tags">
+                        <span class="badge badge-${escapeHtml(a.format.toLowerCase())}">${escapeHtml(a.format)}</span>
+                        ${a.episodes ? '<span class="detail-info">'+a.episodes+' episodes</span>' : ''}
+                        ${a.score ? '<span class="detail-info">&#9733; '+a.score+'%</span>' : ''}
+                    </div>
+                    ${genres ? '<div class="detail-genres">'+genres+'</div>' : ''}
+                    ${a.tvdbId ? '<div class="detail-tvdb"><span class="detail-info">TVDB: <a href="https://thetvdb.com/dereferrer/series/'+a.tvdbId+'" target="_blank" rel="noopener">'+a.tvdbId+'</a>'+(a.tvdbTitle?' — '+escapeHtml(a.tvdbTitle):'')+'</span></div>' : ''}
+                </div>
+            </div>
+            ${a.description ? '<div class="detail-desc">'+escapeHtml(a.description)+'</div>' : ''}`;
+
+        const link = document.getElementById('detail-anilist-link');
+        if (a.anilistUrl) { link.href = a.anilistUrl; link.style.display = ''; }
+        else { link.style.display = 'none'; }
+    }
+
+    function detailNav(dir) {
+        const ids = _getVisibleRowIds();
+        const idx = ids.indexOf(detailCurrentId);
+        const next = idx + dir;
+        if (next < 0 || next >= ids.length) return;
+        const content = document.getElementById('detail-content');
+        content.classList.add('fading');
+        setTimeout(() => {
+            _renderDetail(ids[next]);
+            content.scrollTop = 0;
+            content.classList.remove('fading');
+        }, 150);
+    }
+
+    function closeDetail() {
+        document.getElementById('detail-modal').classList.remove('active');
+        detailCurrentId = null;
+    }
+
+    async function detailIgnore() {
+        if (!detailCurrentId) return;
+        const id = detailCurrentId;
+
+        // Capture the current list and position BEFORE removing the row
+        const ids = _getVisibleRowIds();
+        const idx = ids.indexOf(id);
+        // Determine the next item to show (same index = next item, or fall back to prev)
+        const nextIds = ids.filter(function(i) { return i !== id; });
+        var nextId = null;
+        if (nextIds.length > 0) {
+            // Same index position in the filtered list, or last item
+            nextId = idx < nextIds.length ? nextIds[idx] : nextIds[nextIds.length - 1];
+        }
+
+        const d = await apiCall('/api/ignore', { method:'POST', body:JSON.stringify({anilist_ids:[id], ignored:true}) });
+        if (d?.status === 'ok') {
+            showToast(d.message);
+            const row = document.querySelector(`#anime-table tr[data-anilist-id="${id}"]`);
+            if (row) {
+                // Hide immediately so counts and navigation exclude it
+                row.style.display = 'none';
+                _moveRowToIgnored(row);
+            }
+            _updateStats();
+
+            if (nextId) {
+                _renderDetail(nextId);
+            } else {
+                closeDetail();
+            }
+        } else if (d) showToast(d.message);
+    }
+
+    // Keyboard nav for detail modal
+    document.addEventListener('keydown', function(e) {
+        if (!document.getElementById('detail-modal').classList.contains('active')) return;
+        if (e.key === 'ArrowLeft') detailNav(-1);
+        else if (e.key === 'ArrowRight') detailNav(1);
+        else if (e.key === 'Escape') closeDetail();
+    });
+
+    // Selection
+    const selectAll = document.getElementById('select-all');
+    const btnSync = document.getElementById('btn-sync');
+    const btnIgnore = document.getElementById('btn-ignore-selected');
+
+    function updateCount() {
+        const checks = document.querySelectorAll('.row-check');
+        let n = 0;
+        checks.forEach(function(cb) {
+            var row = cb.closest('tr');
+            if (cb.checked) { n++; row && row.classList.add('row-selected'); }
+            else { row && row.classList.remove('row-selected'); }
+        });
+        btnIgnore.disabled = n === 0;
+        btnSync.disabled = n === 0;
+        const ignoreCount = document.getElementById('ignore-count');
+        const syncCount = document.getElementById('sync-count');
+        if (ignoreCount) {
+            ignoreCount.textContent = n;
+            ignoreCount.style.display = n > 0 ? '' : 'none';
+        }
+        if (syncCount) {
+            syncCount.textContent = n;
+            syncCount.style.display = n > 0 ? '' : 'none';
+        }
+    }
+
+    function confirmIgnoreSelected() {
+        const checks = Array.from(document.querySelectorAll('.row-check:checked'));
+        const n = checks.length;
+        if (!n) return;
+        showConfirmModal(
+            'Ignore ' + n + ' series?',
+            n === 1
+                ? 'This series will be moved to the ignored list. You can restore it later.'
+                : 'These ' + n + ' series will be moved to the ignored list. You can restore them later.',
+            'Continue',
+            function() { ignoreSelected(); closeConfirmModal(); }
+        );
+    }
+
+    // Use event delegation so dynamically added checkboxes work after tab switch
+    document.addEventListener('change', function(e) {
+        if (e.target.id === 'select-all') {
+            document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = e.target.checked; });
+            updateCount();
+        } else if (e.target.classList.contains('row-check')) {
+            updateCount();
+        }
+    });
+
+    // Sorting
+    let sortCol = 'title', sortDir = 1;
+    document.querySelectorAll('.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = th.dataset.col;
+            if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
+            document.querySelectorAll('.sortable').forEach(h => h.classList.remove('sort-asc','sort-desc'));
+            th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
+            const tbody = document.querySelector('#anime-table tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort((a,b) => {
+                let va = a.dataset[col]||'', vb = b.dataset[col]||'';
+                if (['episodes','tvdb'].includes(col)) return ((parseFloat(va)||0)-(parseFloat(vb)||0))*sortDir;
+                return va.localeCompare(vb)*sortDir;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+        });
+    });
+
+    // --- Filtering (search + stat clicks) ---
+    var activeStatFilter = null;
+
+    function rowMatchesFilter(row, filter) {
+        if (filter === 'total') return true;
+        if (filter === 'mapped') return parseInt(row.dataset.tvdb || '0') > 0;
+        if (filter === 'unmapped') return !parseInt(row.dataset.tvdb || '0');
+        if (filter === 'added') return row.dataset.sonarr === 'added' || row.dataset.sonarr === 'exists';
+        return true;
+    }
+
+    function applyFilters() {
+        var q = (document.getElementById('table-search') || {}).value || '';
+        q = q.toLowerCase().trim();
+        document.querySelectorAll('#anime-table tbody tr').forEach(function(row) {
+            var title = (row.dataset.title || '').toLowerCase();
+            var matchesSearch = !q || title.includes(q);
+            var matchesFilter = !activeStatFilter || rowMatchesFilter(row, activeStatFilter);
+            row.style.display = (matchesSearch && matchesFilter) ? '' : 'none';
+        });
+    }
+
+    (function() {
+        var searchInput = document.getElementById('table-search');
+        if (searchInput) searchInput.addEventListener('input', applyFilters);
+    })();
+
+    document.querySelectorAll('.toolbar-stat[data-filter]').forEach(function(stat) {
+        stat.addEventListener('click', function() {
+            var filter = this.dataset.filter;
+            if (activeStatFilter === filter) {
+                activeStatFilter = null;
+                this.classList.remove('active');
+            } else {
+                document.querySelectorAll('.toolbar-stat.active').forEach(function(s) { s.classList.remove('active'); });
+                activeStatFilter = filter;
+                this.classList.add('active');
+            }
+            applyFilters();
+        });
+    });
+
+    // TVDB Match Modal
+    let modalAnilistId = null;
+    let modalSelectedTvdb = null;
+
+    function editTvdb(id, tvdb) {
+        modalAnilistId = id;
+        modalSelectedTvdb = tvdb || null;
+        const a = ANIME_DATA[id];
+        const row = document.querySelector(`tr[data-anilist-id="${id}"]`);
+        document.getElementById('modal-anime-title').textContent = row ? row.querySelector('.title-main').textContent.trim() : (a ? a.title : '');
+
+        // Show current mapping
+        const currentEl = document.getElementById('tvdb-current');
+        if (tvdb && a) {
+            currentEl.innerHTML = `
+                <div class="tvdb-current-mapped">
+                    <div class="tvdb-current-label">Current mapping</div>
+                    <div class="tvdb-current-id">${tvdb}</div>
+                    ${a.tvdbTitle ? `<div class="tvdb-current-title">${escapeHtml(a.tvdbTitle)}</div>` : ''}
+                    ${a.mappingSource ? `<span class="tvdb-tag tvdb-tag-source">${escapeHtml(a.mappingSource)}</span>` : ''}
+                </div>`;
+            currentEl.style.display = '';
+        } else {
+            currentEl.innerHTML = '<div class="tvdb-current-unmatched">No TVDB mapping</div>';
+            currentEl.style.display = '';
+        }
+
+        // Pre-fill input with existing ID
+        document.getElementById('modal-tvdb-input').value = tvdb || '';
+        document.getElementById('modal-verify-preview').style.display = 'none';
+        document.getElementById('modal-clear-btn').style.display = tvdb ? '' : 'none';
+
+        document.getElementById('tvdb-modal').classList.add('active');
+        document.getElementById('modal-tvdb-input').focus();
+    }
+
+    function closeTvdbModal() {
+        document.getElementById('tvdb-modal').classList.remove('active');
+        modalAnilistId = null;
+        modalSelectedTvdb = null;
+    }
+
+    async function verifyManualTvdb() {
+        const v = document.getElementById('modal-tvdb-input').value.trim();
+        if (!v) return;
+        const p = document.getElementById('modal-verify-preview'), c = document.getElementById('modal-verify-content');
+        c.innerHTML = '<span class="text-muted">Verifying...</span>';
+        p.style.display = '';
+        const d = await apiCall('/api/tvdb/verify', { method:'POST', body:JSON.stringify({tvdb_id:parseInt(v)}) });
+        if (d?.status === 'ok' && d.series) {
+            const s = d.series;
+            p.className = 'tvdb-verify-preview tvdb-verify-ok';
+            c.innerHTML = `<div class="preview-title">${escapeHtml(s.title)}</div><div class="preview-meta">${escapeHtml(s.year||'?')} &middot; ${escapeHtml(s.status||'?')}${s.country?' &middot; '+escapeHtml(s.country):''}</div>`;
+            modalSelectedTvdb = parseInt(v);
+        } else if (d?.status === 'not_configured') {
+            p.className = 'tvdb-verify-preview tvdb-verify-warn';
+            c.innerHTML = `<span class="verify-status-msg">${escapeHtml(d.message)}</span>`;
+        } else {
+            p.className = 'tvdb-verify-preview tvdb-verify-err';
+            c.innerHTML = `<span class="verify-status-msg">TVDB ID ${v} not found</span>`;
+        }
+    }
+
+    async function saveTvdb() {
+        if (!modalAnilistId) return;
+        const tvdbId = modalSelectedTvdb || document.getElementById('modal-tvdb-input').value.trim();
+        if (!tvdbId) { showToast('Select or enter a TVDB ID'); return; }
+        setLoading(true);
+        const d = await apiCall('/api/tvdb/set', { method:'POST', body:JSON.stringify({anilist_id:modalAnilistId, tvdb_id:parseInt(tvdbId)}) });
+        setLoading(false);
+        if (d) showToast(d.message);
+        closeTvdbModal();
+        if (d?.status==='ok') {
+            _updateRowTvdb(modalAnilistId, d.tvdb_id, d.tvdb_title, 'manual');
+        }
+    }
+
+    async function clearTvdb() {
+        if (!modalAnilistId || !confirm('Clear TVDB mapping?')) return;
+        setLoading(true);
+        const id = modalAnilistId;
+        const d = await apiCall('/api/tvdb/set', { method:'POST', body:JSON.stringify({anilist_id:id, tvdb_id:null}) });
+        setLoading(false);
+        if (d) showToast(d.message);
+        closeTvdbModal();
+        if (d?.status==='ok') {
+            _updateRowTvdb(id, null, null, null);
+        }
+    }
+
+    document.getElementById('modal-tvdb-input').addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); verifyManualTvdb(); } });
+
+    // --- Inline row update helpers ---
+    function _updateRowTvdb(anilistId, tvdbId, tvdbTitle, source) {
+        const row = document.querySelector(`#anime-table tr[data-anilist-id="${anilistId}"]`);
+        if (!row) return;
+        row.dataset.tvdb = tvdbId || 0;
+
+        if (ANIME_DATA[anilistId]) {
+            ANIME_DATA[anilistId].tvdbId = tvdbId;
+            ANIME_DATA[anilistId].tvdbTitle = tvdbTitle || '';
+            ANIME_DATA[anilistId].mappingSource = source || '';
+        }
+
+        const tvdbCell = row.querySelector('.col-tvdb');
+        const checkCell = row.querySelector('.col-check');
+        const actionsCell = row.querySelector('.col-actions');
+
+        if (tvdbId) {
+            row.classList.remove('row-unmapped');
+            tvdbCell.setAttribute('onclick', `openTvdbLink(event, ${tvdbId})`);
+            tvdbCell.innerHTML = `<div class="tvdb-cell"><span class="tvdb-id">${tvdbId}</span><span class="tvdb-tag tvdb-tag-source">${source||''}</span></div>`;
+            actionsCell.innerHTML = `<div class="row-actions"><button class="action-btn" onclick="editTvdb(${anilistId}, ${tvdbId})" title="Edit TVDB ID"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button><button class="action-btn action-btn-danger" onclick="ignoreSingle(${anilistId})" title="Ignore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></button></div>`;
+        } else {
+            row.classList.add('row-unmapped');
+            tvdbCell.setAttribute('onclick', 'event.stopPropagation()');
+            tvdbCell.innerHTML = '<span class="tvdb-unmatched">unmatched</span>';
+            actionsCell.innerHTML = `<div class="row-actions"><button class="action-btn" onclick="editTvdb(${anilistId}, null)" title="Edit TVDB ID"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button><button class="action-btn action-btn-danger" onclick="ignoreSingle(${anilistId})" title="Ignore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></button></div>`;
+        }
+        row.style.transition = 'background 0.5s';
+        row.style.background = 'var(--color-primary-light)';
+        setTimeout(() => { row.style.background = ''; }, 800);
+        updateCount();
+    }
+
+    function _updateRowSonarrStatus(anilistId, status) {
+        const row = document.querySelector(`#anime-table tr[data-anilist-id="${anilistId}"]`);
+        if (!row) return;
+        row.dataset.sonarr = status;
+        if (ANIME_DATA[anilistId]) ANIME_DATA[anilistId].sonarrStatus = status;
+        const statusCell = row.querySelector('.col-status');
+        if (statusCell) {
+            const hasTvdb = row.dataset.tvdb && row.dataset.tvdb !== '0';
+            statusCell.innerHTML = _statusBadgeHtml(status, hasTvdb);
+        }
+    }
+
+    // Scan menu
+    function toggleScanMenu(e) {
+        e.stopPropagation();
+        var menu = document.getElementById('scan-menu');
+        menu.classList.toggle('open');
+        // Close on outside click
+        if (menu.classList.contains('open')) {
+            setTimeout(function() {
+                document.addEventListener('click', closeScanMenu, { once: true });
+            }, 0);
+        }
+    }
+    function closeScanMenu() {
+        document.getElementById('scan-menu').classList.remove('open');
+    }
+
+    async function doFreshRefresh() {
+        closeScanMenu();
+        await apiCall('/api/cache/clear', { method: 'POST' });
+        doRefresh(true);
+    }
+
+    // Refresh with progress modal
+    function doRefresh(fresh) {
+        const modal = document.getElementById('refresh-modal');
+        const bar = document.getElementById('refresh-bar');
+        const title = document.getElementById('refresh-title');
+        const subtitle = document.getElementById('refresh-subtitle');
+        const log = document.getElementById('refresh-log');
+        const actions = document.getElementById('refresh-actions');
+        const iconWrap = document.getElementById('refresh-icon-wrap');
+        const rsFound = document.getElementById('rs-found');
+        const rsMapped = document.getElementById('rs-mapped');
+        const rsUnmapped = document.getElementById('rs-unmapped');
+
+        var cancelBtn = document.getElementById('refresh-cancel-btn');
+
+        // Reset state
+        bar.style.width = '0%';
+        title.textContent = 'Scanning...';
+        subtitle.textContent = 'Connecting to AniList';
+        log.innerHTML = '';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'btn';
+        cancelBtn.onclick = cancelRefresh;
+        iconWrap.classList.remove('done', 'error');
+        iconWrap.classList.add('spinning');
+        rsFound.textContent = '-';
+        rsMapped.textContent = '-';
+        rsUnmapped.textContent = '-';
+        modal.classList.add('active');
+
+        let mapped = 0, unmapped = 0, total = 0;
+
+        _refreshES = new EventSource(`/api/refresh/stream?season=${SEASON}&year=${YEAR}${fresh ? '&fresh=1' : ''}`);
+        const es = _refreshES;
+
+        es.onmessage = function(e) {
+            const d = JSON.parse(e.data);
+
+            if (d.progress !== undefined) {
+                bar.style.width = d.progress + '%';
+            }
+
+            if (d.step === 'fetch') {
+                subtitle.textContent = d.detail;
+                if (d.count) {
+                    total = d.count;
+                    rsFound.textContent = total;
+                }
+            } else if (d.step === 'mapping') {
+                subtitle.textContent = d.detail;
+            } else if (d.step === 'match') {
+                const name = d.detail;
+                const idx = d.index || 0;
+                subtitle.textContent = `Matching ${idx}/${d.total || total}: ${name}`;
+                if (d.searching) {
+                    // Pre-resolve event — just update subtitle, don't log yet
+                } else if (d.matched) {
+                    mapped++;
+                    addLog(name, 'matched');
+                    rsMapped.textContent = mapped;
+                    rsUnmapped.textContent = unmapped;
+                } else {
+                    unmapped++;
+                    addLog(name, 'unmapped');
+                    rsMapped.textContent = mapped;
+                    rsUnmapped.textContent = unmapped;
+                }
+            } else if (d.step === 'done') {
+                title.textContent = 'Scan Complete';
+                subtitle.textContent = d.detail;
+                bar.style.width = '100%';
+                iconWrap.classList.remove('spinning');
+                iconWrap.classList.add('done');
+                rsMapped.textContent = d.mapped || mapped;
+                rsUnmapped.textContent = d.unmapped || unmapped;
+                rsFound.textContent = d.total || total;
+                _switchToClose();
+                es.close();
+                _refreshES = null;
+            } else if (d.step === 'error') {
+                title.textContent = 'Scan Failed';
+                subtitle.textContent = d.detail;
+                iconWrap.classList.remove('spinning');
+                iconWrap.classList.add('error');
+                _switchToClose();
+                es.close();
+                _refreshES = null;
+            }
+        };
+
+        es.onerror = function() {
+            title.textContent = 'Connection Lost';
+            subtitle.textContent = 'The scan stream was interrupted';
+            iconWrap.classList.remove('spinning');
+            iconWrap.classList.add('error');
+            _switchToClose();
+            es.close();
+            _refreshES = null;
+        };
+
+        function _switchToClose() {
+            cancelBtn.textContent = 'Close';
+            cancelBtn.className = 'btn btn-primary';
+            cancelBtn.onclick = closeRefreshModal;
+        }
+
+        function addLog(name, status) {
+            const el = document.createElement('div');
+            el.className = 'refresh-log-item ' + status;
+            if (status === 'matched') {
+                el.innerHTML = '<span class="log-icon">&#10003;</span><span class="log-name">' + escapeHtml(name) + '</span>';
+            } else {
+                el.innerHTML = '<span class="log-icon miss">&#10005;</span><span class="log-name">' + escapeHtml(name) + '</span>';
+            }
+            log.appendChild(el);
+            log.scrollTop = log.scrollHeight;
+        }
+    }
+
+    var _refreshES = null;
+
+    function cancelRefresh() {
+        if (_refreshES) {
+            _refreshES.close();
+            _refreshES = null;
+        }
+        document.getElementById('refresh-modal').classList.remove('active');
+        location.reload();
+    }
+
+    function closeRefreshModal() {
+        document.getElementById('refresh-modal').classList.remove('active');
+        location.reload();
+    }
+
+    async function rescanSingle(id) {
+        setLoading(true);
+        try {
+            const d = await apiCall('/api/rescan', { method:'POST', body:JSON.stringify({anilist_ids:[id]}) });
+            if (d) showToast(d.message);
+            if (d?.status === 'ok' && d.updated) {
+                for (const [aid, info] of Object.entries(d.updated)) {
+                    _updateRowTvdb(parseInt(aid), info.tvdb_id, info.tvdb_title, info.mapping_source);
+                }
+            }
+        } catch(e) { showToast('Error: '+e.message); }
+        finally { setLoading(false); }
+    }
+
+    function _updateStats() {
+        var rows = document.querySelectorAll('#anime-table tbody tr');
+        var total = rows.length, mapped = 0, unmapped = 0, added = 0;
+        rows.forEach(function(r) {
+            var tvdb = r.dataset.tvdb;
+            var sonarr = r.dataset.sonarr;
+            if (tvdb && tvdb !== '0') mapped++;
+            else unmapped++;
+            if (sonarr === 'added' || sonarr === 'exists') added++;
+        });
+        document.getElementById('stat-total').textContent = total;
+        document.getElementById('stat-mapped').textContent = mapped;
+        document.getElementById('stat-unmapped').textContent = unmapped;
+        document.getElementById('stat-added').textContent = added;
+    }
+
+    var _syncCancelled = false;
+
+    async function syncSelected() {
+        // Collect all checked IDs, separate matched from unmatched
+        const allChecked = Array.from(document.querySelectorAll('.row-check:checked')).map(cb => parseInt(cb.value));
+        if (!allChecked.length) { showToast('No series selected'); return; }
+        const ids = [];
+        const unmatchedNames = [];
+        allChecked.forEach(id => {
+            const row = document.querySelector(`#anime-table tr[data-anilist-id="${id}"]`);
+            if (row && row.dataset.tvdb && row.dataset.tvdb !== '0') {
+                ids.push(id);
+            } else if (row) {
+                unmatchedNames.push(row.querySelector('.title-main')?.textContent?.trim() || 'Unknown');
+            }
+        });
+
+        _syncCancelled = false;
+
+        // Open sync modal
+        const modal = document.getElementById('sync-modal');
+        const bar = document.getElementById('sync-bar');
+        const title = document.getElementById('sync-title');
+        const subtitle = document.getElementById('sync-subtitle');
+        const log = document.getElementById('sync-log');
+        const iconWrap = document.getElementById('sync-icon-wrap');
+        const addedEl = document.getElementById('sync-added');
+        const skippedEl = document.getElementById('sync-skipped');
+        const errorsEl = document.getElementById('sync-errors');
+        const cancelBtn = document.getElementById('sync-cancel-btn');
+
+        bar.style.width = '0%';
+        title.textContent = 'Adding to Sonarr...';
+        subtitle.textContent = `Processing ${ids.length} series`;
+        log.innerHTML = '';
+        iconWrap.className = 'refresh-icon-wrap spinning';
+        addedEl.textContent = '0';
+        skippedEl.textContent = '0';
+        errorsEl.textContent = '0';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'btn';
+        cancelBtn.onclick = function() { _syncCancelled = true; closeSyncModal(); };
+        modal.classList.add('active');
+
+        let added = 0, skipped = unmatchedNames.length, errors = 0;
+        skippedEl.textContent = skipped;
+
+        function addSyncLog(name, status, tag) {
+            const el = document.createElement('div');
+            el.className = 'refresh-log-item ' + status;
+            if (status === 'added') {
+                el.innerHTML = '<span class="log-icon">&#10003;</span><span class="log-name">' + escapeHtml(name) + '</span><span class="log-tag">added</span>';
+            } else if (status === 'skipped') {
+                el.innerHTML = '<span class="log-icon skip">&#8226;</span><span class="log-name">' + escapeHtml(name) + '</span><span class="log-tag">' + escapeHtml(tag || 'skipped') + '</span>';
+            } else {
+                el.innerHTML = '<span class="log-icon miss">&#10005;</span><span class="log-name">' + escapeHtml(name) + '</span><span class="log-tag">' + escapeHtml(tag || 'error') + '</span>';
+            }
+            log.appendChild(el);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // Log unmatched items as skipped
+        unmatchedNames.forEach(name => addSyncLog(name, 'skipped', 'no TVDB'));
+
+        try {
+            const d = ids.length ? await apiCall('/api/sync', { method:'POST', body:JSON.stringify({anilist_ids:ids}) }) : {details:[], statuses:{}};
+
+            if (d?.details) {
+                for (let i = 0; i < d.details.length; i++) {
+                    if (_syncCancelled) break;
+                    const item = d.details[i];
+                    const pct = Math.round(((i + 1) / d.details.length) * 100);
+                    bar.style.width = pct + '%';
+                    subtitle.textContent = `${i + 1}/${d.details.length}: ${item.title}`;
+
+                    if (item.status === 'added') {
+                        added++;
+                        addSyncLog(item.title, 'added');
+                    } else if (item.status === 'exists') {
+                        skipped++;
+                        addSyncLog(item.title, 'skipped', 'in sonarr');
+                    } else {
+                        errors++;
+                        addSyncLog(item.title, 'error', item.status);
+                    }
+                    addedEl.textContent = added;
+                    skippedEl.textContent = skipped;
+                    errorsEl.textContent = errors;
+                }
+            }
+
+            if (d?.statuses) {
+                for (const [aid, status] of Object.entries(d.statuses)) {
+                    _updateRowSonarrStatus(parseInt(aid), status);
+                }
+            }
+
+            bar.style.width = '100%';
+            title.textContent = 'Sync Complete';
+            subtitle.textContent = d?.message || `${added} added, ${skipped} skipped, ${errors} errors`;
+            iconWrap.classList.remove('spinning');
+            iconWrap.classList.add('done');
+
+            document.querySelectorAll('.row-check:checked').forEach(cb => { cb.checked = false; });
+            if (selectAll) selectAll.checked = false;
+            updateCount();
+            _updateStats();
+        } catch(e) {
+            title.textContent = 'Sync Failed';
+            subtitle.textContent = e.message;
+            iconWrap.classList.remove('spinning');
+            iconWrap.classList.add('error');
+        }
+        cancelBtn.textContent = 'Close';
+        cancelBtn.className = 'btn btn-primary';
+        cancelBtn.onclick = closeSyncModal;
+    }
+
+    function closeSyncModal() {
+        document.getElementById('sync-modal').classList.remove('active');
+    }
+
+    // Ignore / Restore — inline DOM transitions, no page reload
+    function _moveRowToIgnored(row) {
+        const id = row.dataset.anilistId;
+        const a = ANIME_DATA[id] || {};
+        const title = a.displayTitle || stripSeasonSuffix(a.title || (row.querySelector('.title-main') ? row.querySelector('.title-main').textContent.trim() : ''));
+        const romaji = a.displayRomaji || (a.titleRomaji ? stripSeasonSuffix(a.titleRomaji) : '');
+        const cover = row.querySelector('.row-cover');
+        const coverSrc = cover ? cover.src : '';
+        const fmt = a.format || (row.querySelector('.col-type .badge') ? row.querySelector('.col-type .badge').textContent.trim() : '');
+        const seasonNum = a.seasonNumber || 1;
+        const eps = a.episodes || '—';
+        const tvdbId = a.tvdbId || '';
+        const sonarr = a.sonarrStatus || row.dataset.sonarr || '';
+
+        // Animate out
+        row.classList.add('row-fading');
+        setTimeout(() => {
+            row.remove();
+            const tr = document.createElement('tr');
+            tr.dataset.anilistId = id;
+            tr.className = 'row-entering';
+            tr.innerHTML = _sharedCellsHtml(coverSrc, title, romaji, fmt, seasonNum, eps, tvdbId, sonarr)
+                + '<td class="col-actions"><button class="action-btn" onclick="restoreSingle('+id+')" title="Restore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg></button></td>';
+            document.getElementById('ignored-tbody').appendChild(tr);
+            document.getElementById('ignored-section').style.display = '';
+            _updateIgnoredCount();
+            updateCount();
+        }, 300);
+    }
+
+    function _moveRowFromIgnored(ignoredRow) {
+        const id = ignoredRow.dataset.anilistId;
+        const a = ANIME_DATA[id];
+        ignoredRow.classList.add('row-fading');
+        setTimeout(() => {
+            ignoredRow.remove();
+            _updateIgnoredCount();
+            if (!a) return;
+
+            const hasTvdb = !!a.tvdbId;
+            const title = a.displayTitle || stripSeasonSuffix(a.title);
+            const romaji = a.displayRomaji || (a.titleRomaji ? stripSeasonSuffix(a.titleRomaji) : '');
+            const fmt = a.format;
+            const sonarr = a.sonarrStatus;
+            const coverLg = a.coverLg || '';
+            const seasonNum = a.seasonNumber || 1;
+            const actionsHtml = '<div class="row-actions"><button class="action-btn" onclick="editTvdb('+id+', '+(a.tvdbId || 'null')+')" title="Edit TVDB ID"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button><button class="action-btn action-btn-danger" onclick="ignoreSingle('+id+')" title="Ignore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></button></div>';
+
+            const tr = document.createElement('tr');
+            tr.dataset.anilistId = id;
+            tr.dataset.title = title.toLowerCase();
+            tr.dataset.format = fmt;
+            tr.dataset.episodes = a.episodes || 0;
+            tr.dataset.tvdb = a.tvdbId || 0;
+            tr.dataset.sonarr = sonarr;
+            tr.dataset.season = seasonNum;
+            if (!hasTvdb) tr.className = 'row-unmapped';
+            tr.classList.add('row-entering', 'clickable-row');
+            tr.onclick = function(e) { onRowClick(e, parseInt(id)); };
+            tr.innerHTML = '<td class="col-check" onclick="toggleRowCheck(event, '+id+')"><input type="checkbox" class="row-check" value="'+id+'"></td>'
+                + _sharedCellsHtml(coverLg, title, romaji, fmt, seasonNum, a.episodes || '—', a.tvdbId, sonarr)
+                + '<td class="col-actions">' + actionsHtml + '</td>';
+
+            // Re-attach checkbox listener
+            const cb = tr.querySelector('.row-check');
+            if (cb) cb.addEventListener('change', updateCount);
+
+            // Insert at correct sorted position (by title, ascending)
+            const tbody = document.querySelector('#anime-table tbody');
+            const existing = Array.from(tbody.querySelectorAll('tr'));
+            const titleLower = title.toLowerCase();
+            let inserted = false;
+            for (const r of existing) {
+                if ((r.dataset.title || '') > titleLower) {
+                    tbody.insertBefore(tr, r);
+                    inserted = true;
+                    break;
+                }
+            }
+            if (!inserted) tbody.appendChild(tr);
+            updateCount();
+        }, 300);
+    }
+
+    function _updateIgnoredCount() {
+        const n = document.querySelectorAll('#ignored-tbody tr').length;
+        document.getElementById('ignored-count-label').textContent = n;
+        document.getElementById('ignored-section').style.display = n > 0 ? '' : 'none';
+    }
+
+    async function ignoreSingle(id) {
+        const row = document.querySelector(`#anime-table tr[data-anilist-id="${id}"]`);
+        if (!row) return;
+        const d = await apiCall('/api/ignore', { method:'POST', body:JSON.stringify({anilist_ids:[id], ignored:true}) });
+        if (d?.status === 'ok') {
+            showToast(d.message);
+            _moveRowToIgnored(row);
+        } else if (d) showToast(d.message);
+    }
+
+    async function ignoreSelected() {
+        const checks = Array.from(document.querySelectorAll('.row-check:checked'));
+        const ids = checks.map(cb => parseInt(cb.value));
+        if (!ids.length) return;
+        const d = await apiCall('/api/ignore', { method:'POST', body:JSON.stringify({anilist_ids:ids, ignored:true}) });
+        if (d?.status === 'ok') {
+            showToast(d.message);
+            ids.forEach(id => {
+                const row = document.querySelector(`#anime-table tr[data-anilist-id="${id}"]`);
+                if (row) _moveRowToIgnored(row);
+            });
+        } else if (d) showToast(d.message);
+    }
+
+    async function restoreSingle(id) {
+        const row = document.querySelector(`#ignored-tbody tr[data-anilist-id="${id}"]`);
+        if (!row) return;
+        const d = await apiCall('/api/ignore', { method:'POST', body:JSON.stringify({anilist_ids:[id], ignored:false}) });
+        if (d?.status === 'ok') {
+            showToast(d.message);
+            _moveRowFromIgnored(row);
+        } else if (d) showToast(d.message);
+    }
+
+    // ── Sticky action bar / table merge on scroll ──
+    (function() {
+        var stickyHeader = document.getElementById('action-bar-sticky');
+        var actionBar = document.getElementById('action-bar');
+        var tableWrapper = document.getElementById('table-wrapper');
+        if (!stickyHeader || !actionBar || !tableWrapper) return;
+        var thead = tableWrapper.querySelector('thead');
+        if (!thead) return;
+
+        var mergeScrollY = null;
+        var merged = false;
+        var ticking = false;
+
+        function merge() {
+            merged = true;
+            mergeScrollY = window.scrollY;
+            stickyHeader.classList.add('stuck');
+            stickyHeader.offsetHeight;
+            thead.classList.add('stuck');
+            thead.style.top = stickyHeader.getBoundingClientRect().bottom + 'px';
+        }
+
+        function unmerge() {
+            merged = false;
+            mergeScrollY = null;
+            stickyHeader.classList.remove('stuck');
+            thead.classList.remove('stuck');
+            thead.style.top = '';
+        }
+
+        function check() {
+            if (!merged) {
+                var barRect = actionBar.getBoundingClientRect();
+                var tableRect = tableWrapper.getBoundingClientRect();
+                if (tableRect.top - barRect.bottom <= 1) {
+                    merge();
+                }
+            } else if (window.scrollY < mergeScrollY - 4) {
+                unmerge();
+            } else if (merged) {
+                thead.style.top = stickyHeader.getBoundingClientRect().bottom + 'px';
+            }
+            ticking = false;
+        }
+
+        requestAnimationFrame(check);
+
+        window.addEventListener('scroll', function() {
+            if (!ticking) { requestAnimationFrame(check); ticking = true; }
+        }, { passive: true });
+
+        window.addEventListener('resize', function() {
+            if (merged) {
+                stickyHeader.offsetHeight;
+                thead.style.top = stickyHeader.getBoundingClientRect().bottom + 'px';
+            }
+        });
+    })();
+
+    // Overflow detection for title scroll
+    // Recalculates every hover to handle dynamic content and resizes
+    (function() {
+        var SPEED = 60; // px per second
+
+        document.addEventListener('mouseover', function(e) {
+            var td = e.target.closest('td.col-title');
+            if (!td) return;
+
+            td.querySelectorAll('.title-scroll').forEach(function(scroll) {
+                var parent = scroll.parentElement; // .title-main or .title-sub
+                // Compare the natural text width vs the visible container
+                var textWidth = scroll.scrollWidth;
+                var containerWidth = parent.offsetWidth;
+                var overflow = textWidth - containerWidth;
+
+                if (overflow > 2) {
+                    // Add a small buffer so the last characters are fully visible
+                    scroll.classList.add('is-overflowing');
+                    scroll.style.setProperty('--scroll-dist', '-' + (overflow + 8) + 'px');
+                    scroll.style.setProperty('--scroll-duration', ((overflow + 8) / SPEED).toFixed(2) + 's');
+                } else {
+                    scroll.classList.remove('is-overflowing');
+                    scroll.style.removeProperty('--scroll-dist');
+                    scroll.style.removeProperty('--scroll-duration');
+                }
+            });
+        });
+    })();
+
+    // ── Client-side tab switching ──
+    (function() {
+        var SVG_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>';
+        var SVG_IGNORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>';
+        var SVG_RESTORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>';
+
+        function esc(s) {
+            if (!s) return '';
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function renderAnimeRow(a) {
+            var hasTvdb = !!a.tvdb_id;
+            var dt = esc(a.display_title);
+            var dr = esc(a.display_romaji);
+            var sn = a.season_number || 1;
+            var statusBadge;
+            if (a.sonarr_status === 'added' || a.sonarr_status === 'exists') {
+                statusBadge = '<span class="badge badge-added">in sonarr</span>';
+            } else if (hasTvdb) {
+                statusBadge = '<span class="badge badge-mapped">ready</span>';
+            } else {
+                statusBadge = '<span class="badge badge-unmapped">unmatched</span>';
+            }
+            var subTitle = (dr && dr !== dt) ? '<span class="title-sub"><span class="title-scroll">' + dr + '</span></span>' : '';
+            return '<tr data-anilist-id="' + a.anilist_id + '"'
+                + ' data-title="' + esc((a.title_english || a.title_romaji || '').toLowerCase()) + '"'
+                + ' data-format="' + esc(a.format) + '"'
+                + ' data-episodes="' + (a.episodes || 0) + '"'
+                + ' data-tvdb="' + (a.tvdb_id || 0) + '"'
+                + ' data-sonarr="' + esc(a.sonarr_status) + '"'
+                + ' data-season="' + sn + '"'
+                + ' class="clickable-row' + (hasTvdb ? '' : ' row-unmapped') + '"'
+                + ' onclick="onRowClick(event,' + a.anilist_id + ')">'
+                + '<td class="col-check" onclick="toggleRowCheck(event,' + a.anilist_id + ')"><input type="checkbox" class="row-check" value="' + a.anilist_id + '"></td>'
+                + '<td class="col-cover">' + (a.cover_url ? '<img src="' + esc(a.cover_url) + '" alt="" class="row-cover" loading="lazy">' : '') + '</td>'
+                + '<td class="col-title"><div class="title-cell"><span class="title-main"><span class="title-scroll">' + dt + '</span></span>' + subTitle + '</div></td>'
+                + '<td class="col-type"><span class="badge badge-' + (a.format || '').toLowerCase() + '">' + esc(a.format) + '</span></td>'
+                + '<td class="col-season">' + (sn > 1 ? '<span class="badge badge-sequel">S' + sn + '</span>' : '<span class="badge badge-new">New</span>') + '</td>'
+                + '<td class="col-eps"><span class="eps-value">' + (a.episodes || '\u2014') + '</span></td>'
+                + '<td class="col-tvdb" onclick="openTvdbLink(event,' + (a.tvdb_id || 'null') + ')">' + (hasTvdb ? '<span class="tvdb-id">' + a.tvdb_id + '</span>' : '<span class="tvdb-unmatched">\u2014</span>') + '</td>'
+                + '<td class="col-status">' + statusBadge + '</td>'
+                + '<td class="col-actions"><div class="row-actions">'
+                + '<button class="action-btn" onclick="editTvdb(' + a.anilist_id + ',' + (a.tvdb_id || 'null') + ')" title="Edit TVDB ID">' + SVG_EDIT + '</button>'
+                + '<button class="action-btn action-btn-danger" onclick="ignoreSingle(' + a.anilist_id + ')" title="Ignore">' + SVG_IGNORE + '</button>'
+                + '</div></td></tr>';
+        }
+
+        function renderIgnoredRow(a) {
+            var hasTvdb = !!a.tvdb_id;
+            var dt = esc(a.display_title);
+            var dr = esc(a.display_romaji);
+            var sn = a.season_number || 1;
+            var statusBadge;
+            if (a.sonarr_status === 'added' || a.sonarr_status === 'exists') {
+                statusBadge = '<span class="badge badge-added">in sonarr</span>';
+            } else if (hasTvdb) {
+                statusBadge = '<span class="badge badge-mapped">ready</span>';
+            } else {
+                statusBadge = '<span class="badge badge-unmapped">unmatched</span>';
+            }
+            var subTitle = (dr && dr !== dt) ? '<span class="title-sub"><span class="title-scroll">' + dr + '</span></span>' : '';
+            return '<tr data-anilist-id="' + a.anilist_id + '">'
+                + '<td class="col-cover">' + (a.cover_url ? '<img src="' + esc(a.cover_url) + '" alt="" class="row-cover" loading="lazy">' : '') + '</td>'
+                + '<td class="col-title"><div class="title-cell"><span class="title-main"><span class="title-scroll">' + dt + '</span></span>' + subTitle + '</div></td>'
+                + '<td class="col-type"><span class="badge badge-' + (a.format || '').toLowerCase() + '">' + esc(a.format) + '</span></td>'
+                + '<td class="col-season">' + (sn > 1 ? '<span class="badge badge-sequel">S' + sn + '</span>' : '<span class="badge badge-new">New</span>') + '</td>'
+                + '<td class="col-eps"><span class="eps-value">' + (a.episodes || '\u2014') + '</span></td>'
+                + '<td class="col-tvdb">' + (hasTvdb ? '<span class="tvdb-id">' + a.tvdb_id + '</span>' : '<span class="tvdb-unmatched">\u2014</span>') + '</td>'
+                + '<td class="col-status">' + statusBadge + '</td>'
+                + '<td class="col-actions"><button class="action-btn" onclick="restoreSingle(' + a.anilist_id + ')" title="Restore">' + SVG_RESTORE + '</button></td></tr>';
+        }
+
+        function buildAnimeData(list) {
+            var data = {};
+            list.forEach(function(a) {
+                data[a.anilist_id] = {
+                    title: a.title_english || a.tvdb_title || a.title_romaji,
+                    titleRomaji: a.title_romaji || '',
+                    titleNative: a.title_native || '',
+                    format: a.format,
+                    episodes: a.episodes,
+                    description: a.description || '',
+                    genres: a.genres || '',
+                    score: a.score,
+                    anilistUrl: a.anilist_url || '',
+                    coverLg: a.cover_url_lg || a.cover_url || '',
+                    tvdbId: a.tvdb_id,
+                    tvdbTitle: a.tvdb_title || '',
+                    mappingSource: a.mapping_source || '',
+                    sonarrStatus: a.sonarr_status,
+                    seasonNumber: a.season_number || 1
+                };
+            });
+            return data;
+        }
+
+        function applySeasonData(data) {
+            SEASON = data.season;
+            YEAR = data.year;
+            ANIME_DATA = buildAnimeData(data.anime);
+
+            // Update stats
+            document.getElementById('stat-total').textContent = data.stats.total;
+            document.getElementById('stat-mapped').textContent = data.stats.mapped;
+            document.getElementById('stat-unmapped').textContent = data.stats.unmapped;
+            document.getElementById('stat-added').textContent = data.stats.added;
+
+            // Render main table or empty state
+            var wrapper = document.getElementById('table-wrapper');
+            var emptyState = document.querySelector('.empty-state');
+            if (data.anime.length > 0) {
+                if (!wrapper) {
+                    // Was showing empty state — need to create the table
+                    if (emptyState) emptyState.remove();
+                    var actionBar = document.getElementById('action-bar-sticky');
+                    var html = '<div class="table-wrapper" id="table-wrapper"><table class="data-table" id="anime-table"><thead><tr>'
+                        + '<th class="col-check" style="width:3%"><input type="checkbox" id="select-all" title="Select all mapped"></th>'
+                        + '<th class="col-cover" style="width:4%"></th>'
+                        + '<th class="sortable col-title" style="width:30%" data-col="title">Title</th>'
+                        + '<th class="sortable col-type" style="width:6%" data-col="format">Type</th>'
+                        + '<th class="col-season" style="width:6%">Season</th>'
+                        + '<th class="sortable col-eps" style="width:4%" data-col="episodes">Eps</th>'
+                        + '<th class="sortable col-tvdb" style="width:7%" data-col="tvdb">TVDB ID</th>'
+                        + '<th class="col-status" style="width:9%">Status</th>'
+                        + '<th class="col-actions" style="width:7%">Actions</th>'
+                        + '</tr></thead><tbody></tbody></table></div>';
+                    actionBar.insertAdjacentHTML('afterend', html);
+                    wrapper = document.getElementById('table-wrapper');
+                }
+                var tbody = wrapper.querySelector('tbody');
+                tbody.innerHTML = data.anime.map(renderAnimeRow).join('');
+            } else {
+                if (wrapper) wrapper.remove();
+                var anchor = document.getElementById('action-bar-sticky');
+                var existing = document.querySelector('.empty-state');
+                if (!existing) {
+                    anchor.insertAdjacentHTML('afterend', '<div class="empty-state">No anime data for <strong>' + esc(data.season) + ' ' + data.year + '</strong>. Click <strong>Scan</strong> to fetch.</div>');
+                } else {
+                    existing.innerHTML = 'No anime data for <strong>' + esc(data.season) + ' ' + data.year + '</strong>. Click <strong>Scan</strong> to fetch.';
+                }
+            }
+
+            // Render ignored section
+            var ignoredSection = document.getElementById('ignored-section');
+            if (data.ignored.length > 0) {
+                ignoredSection.style.display = '';
+                document.getElementById('ignored-count-label').textContent = data.ignored.length;
+                document.getElementById('ignored-tbody').innerHTML = data.ignored.map(renderIgnoredRow).join('');
+            } else {
+                ignoredSection.style.display = 'none';
+            }
+
+            // Reset checkboxes and counts
+            var selectAll = document.getElementById('select-all');
+            if (selectAll) selectAll.checked = false;
+            updateCount();
+
+            // Reset search
+            var search = document.getElementById('table-search');
+            if (search) { search.value = ''; search.dispatchEvent(new Event('input')); }
+
+            // Update page title
+            document.title = 'TruAni \u2014 ' + data.season + ' ' + data.year;
+        }
+
+        // Intercept tab clicks
+        document.getElementById('season-tabs').addEventListener('click', function(e) {
+            var tab = e.target.closest('.season-tab');
+            if (!tab) return;
+            e.preventDefault();
+
+            var href = tab.getAttribute('href');
+            var params = new URLSearchParams(href.split('?')[1] || '');
+            var season = params.get('season');
+            var year = params.get('year');
+            if (!season || !year) return;
+
+            // Update active tab immediately
+            document.querySelectorAll('.season-tab').forEach(function(t) { t.classList.remove('active'); });
+            tab.classList.add('active');
+
+            // Fetch data
+            apiCall('/api/season-data?season=' + encodeURIComponent(season) + '&year=' + encodeURIComponent(year))
+                .then(function(data) {
+                    if (!data) return;
+                    applySeasonData(data);
+                    history.pushState({ season: season, year: year }, '', '/?season=' + season + '&year=' + year);
+                });
+        });
+
+        // Handle back/forward navigation
+        window.addEventListener('popstate', function(e) {
+            if (e.state && e.state.season && e.state.year) {
+                var season = e.state.season;
+                var year = e.state.year;
+                // Update active tab
+                document.querySelectorAll('.season-tab').forEach(function(t) {
+                    var href = t.getAttribute('href') || '';
+                    var p = new URLSearchParams(href.split('?')[1] || '');
+                    t.classList.toggle('active', p.get('season') === season && p.get('year') === String(year));
+                });
+                apiCall('/api/season-data?season=' + encodeURIComponent(season) + '&year=' + encodeURIComponent(year))
+                    .then(function(data) { if (data) applySeasonData(data); });
+            }
+        });
+
+        // Store initial state for back navigation
+        history.replaceState({ season: SEASON, year: YEAR }, '');
+    })();
+</script>
+{% endblock %}

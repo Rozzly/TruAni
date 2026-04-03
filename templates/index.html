@@ -50,6 +50,13 @@
 {% endmacro %}
 
 {% block content %}
+<div id="update-banner" class="update-banner" style="display:none">
+    <span>A new version of TruAni is available: <strong id="update-banner-version"></strong></span>
+    <div class="update-banner-actions">
+        <a href="/settings#updates" class="btn btn-sm btn-primary">View Update</a>
+        <button class="btn btn-sm" onclick="dismissUpdateBanner()" title="Dismiss">Dismiss</button>
+    </div>
+</div>
 <div class="season-tabs" id="season-tabs">
     {% set ns = namespace(prev_past=None) %}
     {% for tab in tabs %}
@@ -352,13 +359,6 @@
 
 <!-- Anime data for detail modal -->
 <script>
-    function escapeHtml(s) {
-        if (!s) return '';
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
-    }
-
     function stripSeasonSuffix(t) {
         if (!t) return t;
         return t
@@ -1264,46 +1264,55 @@
     }
 
     // ── Sticky action bar / table merge on scroll ──
-    (function() {
+    var resetStickyMerge = (function() {
         var stickyHeader = document.getElementById('action-bar-sticky');
         var actionBar = document.getElementById('action-bar');
-        var tableWrapper = document.getElementById('table-wrapper');
-        if (!stickyHeader || !actionBar || !tableWrapper) return;
-        var thead = tableWrapper.querySelector('thead');
-        if (!thead) return;
+        if (!stickyHeader || !actionBar) return function(){};
 
         var mergeScrollY = null;
         var merged = false;
         var ticking = false;
 
-        function merge() {
+        function getElements() {
+            var tw = document.getElementById('table-wrapper');
+            return tw ? { wrapper: tw, thead: tw.querySelector('thead') } : null;
+        }
+
+        function merge(els) {
             merged = true;
             mergeScrollY = window.scrollY;
             stickyHeader.classList.add('stuck');
             stickyHeader.offsetHeight;
-            thead.classList.add('stuck');
-            thead.style.top = stickyHeader.getBoundingClientRect().bottom + 'px';
+            if (els.thead) {
+                els.thead.classList.add('stuck');
+                els.thead.style.top = stickyHeader.getBoundingClientRect().bottom + 'px';
+            }
         }
 
         function unmerge() {
             merged = false;
             mergeScrollY = null;
             stickyHeader.classList.remove('stuck');
-            thead.classList.remove('stuck');
-            thead.style.top = '';
+            var els = getElements();
+            if (els && els.thead) {
+                els.thead.classList.remove('stuck');
+                els.thead.style.top = '';
+            }
         }
 
         function check() {
+            var els = getElements();
+            if (!els) { ticking = false; return; }
             if (!merged) {
                 var barRect = actionBar.getBoundingClientRect();
-                var tableRect = tableWrapper.getBoundingClientRect();
+                var tableRect = els.wrapper.getBoundingClientRect();
                 if (tableRect.top - barRect.bottom <= 1) {
-                    merge();
+                    merge(els);
                 }
             } else if (window.scrollY < mergeScrollY - 4) {
                 unmerge();
-            } else if (merged) {
-                thead.style.top = stickyHeader.getBoundingClientRect().bottom + 'px';
+            } else if (merged && els.thead) {
+                els.thead.style.top = stickyHeader.getBoundingClientRect().bottom + 'px';
             }
             ticking = false;
         }
@@ -1316,10 +1325,18 @@
 
         window.addEventListener('resize', function() {
             if (merged) {
-                stickyHeader.offsetHeight;
-                thead.style.top = stickyHeader.getBoundingClientRect().bottom + 'px';
+                var els = getElements();
+                if (els && els.thead) {
+                    stickyHeader.offsetHeight;
+                    els.thead.style.top = stickyHeader.getBoundingClientRect().bottom + 'px';
+                }
             }
         });
+
+        return function() {
+            unmerge();
+            requestAnimationFrame(check);
+        };
     })();
 
     // Overflow detection for title scroll
@@ -1455,6 +1472,7 @@
             SEASON = data.season;
             YEAR = data.year;
             ANIME_DATA = buildAnimeData(data.anime);
+            if (typeof resetStickyMerge === 'function') resetStickyMerge();
 
             // Update stats
             document.getElementById('stat-total').textContent = data.stats.total;
@@ -1564,5 +1582,24 @@
         // Store initial state for back navigation
         history.replaceState({ season: SEASON, year: YEAR }, '');
     })();
+
+    // Check for updates (background)
+    function dismissUpdateBanner() {
+        var banner = document.getElementById('update-banner');
+        var version = document.getElementById('update-banner-version').textContent;
+        sessionStorage.setItem('update_dismissed', version);
+        banner.classList.add('fade-out');
+        setTimeout(function() { banner.style.display = 'none'; }, 400);
+    }
+
+    apiCall('/api/update/check').then(function(d) {
+        if (d && d.update_available) {
+            var version = 'v' + d.latest_version;
+            if (sessionStorage.getItem('update_dismissed') !== version) {
+                document.getElementById('update-banner-version').textContent = version;
+                document.getElementById('update-banner').style.display = '';
+            }
+        }
+    });
 </script>
 {% endblock %}

@@ -10,6 +10,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# App version (read from VERSION file)
+_version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+try:
+    with open(_version_file) as _f:
+        APP_VERSION = _f.read().strip()
+except FileNotFoundError:
+    APP_VERSION = "0.0.0"
+
 # These are always from env (bootstrap values)
 DB_PATH = os.getenv("DB_PATH", "data/truani.db")
 FLASK_PORT = int(os.getenv("FLASK_PORT", "5656"))
@@ -87,19 +95,6 @@ def sonarr_search_on_add():
 def sonarr_tags():
     raw = _get("sonarr_tags", "SONARR_TAGS", "")
     return [t.strip() for t in raw.split(",") if t.strip()]
-
-# Project-level default API keys. Users can override in Settings.
-# TVDB: requires per-project key — register at thetvdb.com/dashboard/account/apikey
-_DEFAULT_TVDB_KEY = ""
-
-
-def tvdb_api_key():
-    return _get("tvdb_api_key", "TVDB_API_KEY", _DEFAULT_TVDB_KEY)
-
-def tvdb_using_default():
-    """True if no user override is set and using project default."""
-    import db
-    return not db.get_setting("tvdb_api_key") and not os.getenv("TVDB_API_KEY") and bool(_DEFAULT_TVDB_KEY)
 
 def refresh_frequency():
     return _get("refresh_frequency", None, "daily")

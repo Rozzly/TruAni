@@ -17,7 +17,6 @@ import db
 from services.anilist import current_season, next_season, fetch_seasonal_anime
 from services.mapping import resolve_tvdb_id, rescan_tvdb_id
 from services.sonarr import test_connection, sync_all, lookup_series, get_existing_series
-from services.tvdb import get_series as tvdb_get_series
 
 app = Flask(__name__)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -26,6 +25,11 @@ app.permanent_session_lifetime = timedelta(days=7)
 
 from services.titleutil import strip_season_suffix, display_title
 app.jinja_env.filters['display_title'] = display_title
+
+
+@app.context_processor
+def _inject_globals():
+    return {"app_version": config.APP_VERSION}
 
 
 @app.after_request
@@ -138,7 +142,7 @@ def login_required(f):
             if request.is_json or request.path.startswith("/api/"):
                 return jsonify({"status": "error", "message": "Not authenticated"}), 401
             return redirect(url_for("login"))
-        if not db.get_setting("setup_complete") and request.endpoint != "setup":
+        if not db.get_setting("setup_complete") and request.endpoint not in ("setup", "api_settings", "api_test_sonarr", "api_sonarr_options"):
             return redirect(url_for("setup"))
         return f(*args, **kwargs)
     return decorated
@@ -181,34 +185,49 @@ def setup():
         return redirect(url_for("login"))
 
     if request.method == "POST":
-        new_username = request.form.get("username", "").strip()
-        new_password = request.form.get("new_password", "")
-        confirm = request.form.get("confirm_password", "")
+        is_json = request.is_json
+        data = request.get_json(silent=True) if is_json else request.form
+        new_username = (data.get("username") or "").strip()
+        new_password = data.get("new_password") or ""
+        confirm = data.get("confirm_password") or ""
 
+        error = None
+        field = "new_password"
         if not new_username:
-            flash("Username is required", "error")
+            error, field = "Username is required", "username"
         elif not new_password:
-            flash("Password is required", "error")
+            error = "Password is required"
         elif new_password != confirm:
-            flash("Passwords do not match", "error")
+            error, field = "Passwords do not match", "confirm_password"
         else:
             err = db.validate_password(new_password)
             if err:
-                flash(err, "error")
+                error = err
             else:
                 old_username = session["user"]
                 if new_username != old_username:
                     if db.get_user_by_username(new_username):
-                        flash("Username already taken", "error")
-                        return render_template("setup.html")
-                    db.update_username(old_username, new_username)
-                    session["user"] = new_username
-                db.update_password(session["user"], new_password)
-                db.save_setting("setup_complete", "true")
-                flash("Account secured! Welcome to TruAni.", "success")
-                return redirect(url_for("index"))
+                        error, field = "Username already taken", "username"
 
-    return render_template("setup.html")
+        if error:
+            if is_json:
+                return jsonify({"status": "error", "message": error, "field": field}), 400
+            flash(error, "error")
+            return render_template("setup.html")
+
+        if new_username != session["user"]:
+            db.update_username(session["user"], new_username)
+            session["user"] = new_username
+        db.update_password(session["user"], new_password)
+        db.save_setting("credentials_set", "true")
+
+        if is_json:
+            return jsonify({"status": "ok"})
+        flash("Account secured! Welcome to TruAni.", "success")
+        return redirect(url_for("setup"))
+
+    step = 2 if db.get_setting("credentials_set") else 1
+    return render_template("setup.html", settings=db.get_all_settings(), step=step)
 
 
 # --- Core Logic ---
@@ -464,8 +483,6 @@ def settings_page():
         sonarr_ok=sonarr_ok,
         sonarr_msg=sonarr_msg,
         user=session.get("user"),
-        tvdb_using_default=config.tvdb_using_default(),
-        tvdb_has_key=bool(config.tvdb_api_key()),
     )
 
 
@@ -667,53 +684,6 @@ def api_tvdb_verify():
     return jsonify({"status": "ok", "series": info})
 
 
-@app.route("/api/tvdb/search", methods=["POST"])
-@login_required
-def api_tvdb_search():
-    """Search for TVDB matches by anime ID via TVDB API."""
-    data = request.get_json(silent=True) or {}
-    anilist_id = data.get("anilist_id")
-
-    if not anilist_id:
-        return jsonify({"status": "error", "message": "Missing anilist_id"}), 400
-
-    anime = db.get_anime_by_anilist_id(anilist_id)
-    if not anime:
-        return jsonify({"status": "error", "message": "Anime not found"}), 404
-
-    results = []
-    sources_status = {
-        "tvdb": "available" if config.tvdb_api_key() else "not_configured",
-    }
-
-    if sources_status["tvdb"] == "available":
-        from services.tvdb import search_series as tvdb_search
-        for title in [anime.get("title_english"), anime.get("title_romaji")]:
-            if not title:
-                continue
-            match = tvdb_search(title, anime.get("season_year"))
-            if match:
-                tvdb_id, matched_title = match
-                if any(r["tvdb_id"] == tvdb_id for r in results):
-                    break
-                info = tvdb_get_series(tvdb_id)
-                results.append({
-                    "tvdb_id": tvdb_id,
-                    "title": info.get("title", matched_title) if info else matched_title,
-                    "year": info.get("year") if info else None,
-                    "status": info.get("status") if info else None,
-                    "overview": info.get("overview") if info else None,
-                    "source": "tvdb",
-                })
-                break
-
-    return jsonify({
-        "status": "ok",
-        "results": results,
-        "sources": sources_status,
-    })
-
-
 @app.route("/api/sync", methods=["POST"])
 @login_required
 def api_sync():
@@ -771,7 +741,8 @@ def api_settings():
         "sonarr_url", "sonarr_api_key", "sonarr_root_folder",
         "sonarr_quality_profile", "sonarr_series_type", "sonarr_monitor",
         "sonarr_season_folder", "sonarr_search_on_add", "sonarr_tags",
-        "tvdb_api_key", "refresh_frequency", "refresh_time", "refresh_day",
+        "refresh_frequency", "refresh_time", "refresh_day",
+        "setup_complete",
     }
 
     to_save = {k: v for k, v in data.items() if k in allowed_keys}
@@ -893,6 +864,33 @@ def api_status():
     })
 
 
+# --- Update ---
+
+@app.route("/api/update/check")
+@login_required
+def api_update_check():
+    from services.updater import check_for_update
+    force = request.args.get("force") == "1"
+    return jsonify(check_for_update(force=force))
+
+
+@app.route("/api/update/changelog")
+@login_required
+def api_update_changelog():
+    from services.updater import get_changelog
+    return jsonify(get_changelog())
+
+
+@app.route("/api/update/apply", methods=["POST"])
+@login_required
+def api_update_apply():
+    from services.updater import perform_update, schedule_restart
+    result = perform_update()
+    if result.get("success") and result.get("restart_required"):
+        schedule_restart()
+    return jsonify(result)
+
+
 # --- Scheduler ---
 
 def scheduled_refresh():
@@ -934,6 +932,13 @@ def start_scheduler():
     trigger = _build_trigger()
     _scheduler = BackgroundScheduler()
     _scheduler.add_job(scheduled_refresh, trigger, id="refresh", replace_existing=True)
+
+    from apscheduler.triggers.cron import CronTrigger as _CronTrigger
+    from services.updater import check_for_update
+    _scheduler.add_job(lambda: check_for_update(force=True),
+                       _CronTrigger(day_of_week="sun", hour=2, minute=0),
+                       id="update_check", replace_existing=True)
+
     _scheduler.start()
     print(f"[Scheduler] Refresh scheduled: {config.refresh_frequency()} at {config.refresh_time()}")
 

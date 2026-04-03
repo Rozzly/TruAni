@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}TruAni — Login{% endblock %}
+{% block alerts %}{% endblock %}
 
 {% block content %}
 <div class="login-wrapper">
@@ -37,6 +38,13 @@
                 <input type="password" id="password" name="password" required autocomplete="current-password">
             </div>
             <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div class="field-error" style="margin-top:0.75rem;text-align:center;">{{ message }}</div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
         </form>
     </div>
 </div>

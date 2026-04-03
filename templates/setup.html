@@ -1,9 +1,12 @@
 {% extends "base.html" %}
 {% block title %}TruAni — Setup{% endblock %}
+{% block alerts %}{% endblock %}
 
 {% block content %}
 <div class="login-wrapper">
-    <div class="login-card">
+
+    <!-- Step 1: Credentials -->
+    <div id="setup-step1" class="login-card" {% if step == 2 %}style="display:none"{% endif %}>
         <div class="login-logo">
             <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
                 <path d="M10,52 Q6,38 10,28 L7,8 L22,22 Q27,18 32,18 Q37,18 42,22 L57,8 L54,28 Q58,38 54,52 Q44,58 32,58 Q20,58 10,52 Z"/>
@@ -28,21 +31,275 @@
         <h1 class="login-title">TruAni</h1>
         <p class="login-subtitle">Set up your account</p>
         <p class="login-subtitle" style="font-size:0.8rem;opacity:0.7;margin-top:0.25rem;">Change the default credentials to secure your instance.</p>
-        <form method="POST" action="/setup">
+        <form id="setup-form" onsubmit="return submitSetup(event)">
             <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" value="{{ session.get('user', '') }}" required autofocus autocomplete="username">
+                <label for="setup-username">Username</label>
+                <input type="text" id="setup-username" value="{{ session.get('user', '') }}" autofocus autocomplete="username">
             </div>
             <div class="form-group">
-                <label for="new_password">New Password <span class="hint">(min 8 characters)</span></label>
-                <input type="password" id="new_password" name="new_password" required autocomplete="new-password" minlength="8">
+                <label for="setup-password">New Password <span class="hint">(min 8 characters)</span></label>
+                <input type="password" id="setup-password" autocomplete="new-password">
             </div>
             <div class="form-group">
-                <label for="confirm_password">Confirm Password</label>
-                <input type="password" id="confirm_password" name="confirm_password" required autocomplete="new-password">
+                <label for="setup-confirm">Confirm Password</label>
+                <input type="password" id="setup-confirm" autocomplete="new-password">
             </div>
             <button type="submit" class="btn btn-primary btn-full">Save & Continue</button>
         </form>
     </div>
+
+    <!-- Step 2: Sonarr Configuration -->
+    <div id="setup-step2" class="settings-section" style="{% if step != 2 %}display:none;{% endif %}max-width:480px;width:100%;">
+        <div class="settings-section-header">
+            <h2>Connect Sonarr</h2>
+            <p>Configure your Sonarr instance for anime imports. You can change these later in Settings.</p>
+        </div>
+        <div class="settings-section-body">
+            <div class="form-group">
+                <label for="setup-sonarr-url">Sonarr URL</label>
+                <input type="url" id="setup-sonarr-url" value="{{ settings.sonarr_url }}" placeholder="http://localhost:8989">
+            </div>
+            <div class="form-group">
+                <label for="setup-sonarr-key">API Key</label>
+                <input type="password" id="setup-sonarr-key" value="{{ settings.sonarr_api_key }}" placeholder="Sonarr API key">
+            </div>
+            <div class="form-group">
+                <label for="setup-sonarr-root">Root Folder</label>
+                <select id="setup-sonarr-root">
+                    {% if settings.sonarr_root_folder %}
+                    <option value="{{ settings.sonarr_root_folder }}" selected>{{ settings.sonarr_root_folder }}</option>
+                    {% else %}
+                    <option value="" disabled selected>Enter URL &amp; API key first</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="setup-sonarr-quality">Quality Profile</label>
+                <select id="setup-sonarr-quality">
+                    {% if settings.sonarr_quality_profile %}
+                    <option value="{{ settings.sonarr_quality_profile }}" selected>{{ settings.sonarr_quality_profile }}</option>
+                    {% else %}
+                    <option value="" disabled selected>Enter URL &amp; API key first</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="setup-sonarr-type">Series Type</label>
+                    <select id="setup-sonarr-type">
+                        <option value="anime" {{ 'selected' if settings.sonarr_series_type == 'anime' }}>Anime</option>
+                        <option value="standard" {{ 'selected' if settings.sonarr_series_type == 'standard' }}>Standard</option>
+                        <option value="daily" {{ 'selected' if settings.sonarr_series_type == 'daily' }}>Daily</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="setup-sonarr-monitor">Monitor</label>
+                    <select id="setup-sonarr-monitor">
+                        {% for opt in ['all','future','missing','existing','pilot','firstSeason','latestSeason','none'] %}
+                        <option value="{{ opt }}" {{ 'selected' if settings.sonarr_monitor == opt }}>{{ opt }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="toggle-row">
+                <label>Season Folders</label>
+                <label class="toggle">
+                    <input type="checkbox" id="setup-sonarr-season-folder"
+                           {{ 'checked' if settings.sonarr_season_folder in ('true','True','1') }}>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="toggle-row">
+                <label>Search on Add</label>
+                <label class="toggle">
+                    <input type="checkbox" id="setup-sonarr-search-on-add"
+                           {{ 'checked' if settings.sonarr_search_on_add in ('true','True','1') }}>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="form-group" style="margin-top:0.5rem;">
+                <label for="setup-sonarr-tags">Tags <span class="hint">(comma separated)</span></label>
+                <input type="text" id="setup-sonarr-tags" value="{{ settings.sonarr_tags }}" placeholder="anime, seasonal">
+            </div>
+        </div>
+        <div class="settings-section-footer">
+            <div class="settings-status">
+                <span class="dot err" id="setup-sonarr-dot"></span>
+                <span id="setup-sonarr-status">Not configured</span>
+            </div>
+            <div style="display:flex;gap:0.375rem;">
+                <button class="btn btn-sm" onclick="setupTestSonarr()">Test</button>
+                <button class="btn btn-sm btn-primary" id="setup-sonarr-save" onclick="setupSaveSonarr()" disabled>Save & Finish</button>
+            </div>
+        </div>
+    </div>
+
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // --- Step 1: Credentials ---
+    async function submitSetup(e) {
+        e.preventDefault();
+        clearFieldError('setup-username');
+        clearFieldError('setup-password');
+        clearFieldError('setup-confirm');
+
+        var username = document.getElementById('setup-username').value.trim();
+        var password = document.getElementById('setup-password').value;
+        var confirm = document.getElementById('setup-confirm').value;
+
+        if (!username) { showFieldError('setup-username', 'Username is required'); return false; }
+        if (!password) { showFieldError('setup-password', 'Password is required'); return false; }
+        if (password.length < 8) { showFieldError('setup-password', 'Password must be at least 8 characters'); return false; }
+        if (password !== confirm) { showFieldError('setup-confirm', 'Passwords do not match'); return false; }
+
+        try {
+            var resp = await apiCall('/setup', {
+                method: 'POST',
+                body: JSON.stringify({ username: username, new_password: password, confirm_password: confirm })
+            });
+            if (resp && resp.status === 'ok') {
+                // Transition to step 2
+                document.getElementById('setup-step1').style.display = 'none';
+                document.getElementById('setup-step2').style.display = '';
+            } else if (resp && resp.message) {
+                var fieldMap = { username: 'setup-username', new_password: 'setup-password', confirm_password: 'setup-confirm' };
+                showFieldError(fieldMap[resp.field] || 'setup-password', resp.message);
+            }
+        } catch (err) {
+            showFieldError('setup-password', 'An error occurred. Please try again.');
+        }
+        return false;
+    }
+
+    // --- Step 2: Sonarr ---
+    var _sonarrTestPassed = false;
+
+    async function setupTestSonarr() {
+        clearFieldError('setup-sonarr-url');
+        clearFieldError('setup-sonarr-key');
+        var testBtn = document.querySelector('#setup-step2 .settings-section-footer .btn:not(.btn-primary)');
+        var url = document.getElementById('setup-sonarr-url').value.trim();
+        var key = document.getElementById('setup-sonarr-key').value.trim();
+
+        if (!url) { showFieldError('setup-sonarr-url', 'Sonarr URL is required'); return; }
+        if (!key) { showFieldError('setup-sonarr-key', 'API key is required'); return; }
+
+        try {
+            var resp = await apiCall('/api/settings/test-sonarr', {
+                method: 'POST',
+                body: JSON.stringify({ sonarr_url: url, sonarr_api_key: key })
+            });
+            if (resp) {
+                document.getElementById('setup-sonarr-status').textContent = resp.message;
+                document.getElementById('setup-sonarr-dot').className = 'dot ' + (resp.connected ? 'ok' : 'err');
+                if (resp.connected) {
+                    _sonarrTestPassed = true;
+                    document.getElementById('setup-sonarr-save').disabled = false;
+                    if (testBtn) btnSuccess(testBtn);
+                    setupLoadOptions();
+                } else {
+                    _sonarrTestPassed = false;
+                    document.getElementById('setup-sonarr-save').disabled = true;
+                    showFieldError('setup-sonarr-url', resp.message);
+                }
+            }
+        } catch (e) {
+            showFieldError('setup-sonarr-url', 'Connection failed');
+        }
+    }
+
+    async function setupLoadOptions() {
+        var url = document.getElementById('setup-sonarr-url').value.trim();
+        var key = document.getElementById('setup-sonarr-key').value.trim();
+        if (!url || !key) return;
+
+        var resp = await apiCall('/api/settings/sonarr-options', {
+            method: 'POST',
+            body: JSON.stringify({ sonarr_url: url, sonarr_api_key: key })
+        });
+        if (!resp || resp.status !== 'ok') return;
+
+        var rfSelect = document.getElementById('setup-sonarr-root');
+        var currentRf = rfSelect.value;
+        rfSelect.innerHTML = '';
+        if (resp.root_folders.length === 0) {
+            rfSelect.innerHTML = '<option value="" disabled selected>No root folders found</option>';
+        } else {
+            resp.root_folders.forEach(function(rf) {
+                var opt = document.createElement('option');
+                opt.value = rf.path;
+                var gb = Math.round(rf.freeSpace / 1073741824);
+                opt.textContent = rf.path + (gb > 0 ? ' (' + gb + ' GB free)' : '');
+                if (rf.path === currentRf) opt.selected = true;
+                rfSelect.appendChild(opt);
+            });
+            if (!currentRf && resp.root_folders.length > 0) rfSelect.selectedIndex = 0;
+        }
+
+        var qpSelect = document.getElementById('setup-sonarr-quality');
+        var currentQp = qpSelect.value;
+        qpSelect.innerHTML = '';
+        if (resp.quality_profiles.length === 0) {
+            qpSelect.innerHTML = '<option value="" disabled selected>No profiles found</option>';
+        } else {
+            resp.quality_profiles.forEach(function(qp) {
+                var opt = document.createElement('option');
+                opt.value = qp.name;
+                opt.textContent = qp.name;
+                if (qp.name === currentQp) opt.selected = true;
+                qpSelect.appendChild(opt);
+            });
+            if (!currentQp && resp.quality_profiles.length > 0) qpSelect.selectedIndex = 0;
+        }
+    }
+
+    async function setupSaveSonarr() {
+        clearFieldError('setup-sonarr-url');
+        clearFieldError('setup-sonarr-key');
+
+        if (!_sonarrTestPassed) {
+            showFieldError('setup-sonarr-url', 'Test the connection before saving');
+            return;
+        }
+
+        var data = {
+            sonarr_url: document.getElementById('setup-sonarr-url').value,
+            sonarr_api_key: document.getElementById('setup-sonarr-key').value,
+            sonarr_root_folder: document.getElementById('setup-sonarr-root').value,
+            sonarr_quality_profile: document.getElementById('setup-sonarr-quality').value,
+            sonarr_series_type: document.getElementById('setup-sonarr-type').value,
+            sonarr_monitor: document.getElementById('setup-sonarr-monitor').value,
+            sonarr_season_folder: document.getElementById('setup-sonarr-season-folder').checked ? 'true' : 'false',
+            sonarr_search_on_add: document.getElementById('setup-sonarr-search-on-add').checked ? 'true' : 'false',
+            sonarr_tags: document.getElementById('setup-sonarr-tags').value,
+            setup_complete: 'true',
+        };
+        try {
+            var resp = await apiCall('/api/settings', { method: 'POST', body: JSON.stringify(data) });
+            if (resp && resp.status === 'ok') {
+                var btn = document.getElementById('setup-sonarr-save');
+                if (btn) btnSuccess(btn);
+                setTimeout(function() { window.location.href = '/'; }, 1500);
+            } else if (resp) {
+                showFieldError('setup-sonarr-url', resp.message);
+            }
+        } catch (e) {
+            showFieldError('setup-sonarr-url', 'An error occurred. Please try again.');
+        }
+    }
+
+    // Reset test state when URL or key changes
+    function _resetSonarrTest() {
+        _sonarrTestPassed = false;
+        document.getElementById('setup-sonarr-save').disabled = true;
+        document.getElementById('setup-sonarr-dot').className = 'dot err';
+        document.getElementById('setup-sonarr-status').textContent = 'Not configured';
+    }
+
+    document.getElementById('setup-sonarr-url').addEventListener('input', _resetSonarrTest);
+    document.getElementById('setup-sonarr-key').addEventListener('input', _resetSonarrTest);
+</script>
 {% endblock %}

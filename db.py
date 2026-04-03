@@ -172,7 +172,6 @@ _DEFAULTS = {
     "sonarr_season_folder": "true",
     "sonarr_search_on_add": "false",
     "sonarr_tags": "",
-    "tvdb_api_key": "",
     "refresh_frequency": "daily",
     "refresh_time": "06:00",
     "refresh_day": "monday",

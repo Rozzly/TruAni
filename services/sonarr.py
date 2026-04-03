@@ -133,13 +133,6 @@ def get_quality_profiles():
     return resp.json()
 
 
-def get_root_folders():
-    """Return list of root folders from Sonarr."""
-    resp = _session.get(_url("/rootfolder"), headers=_headers(), timeout=10)
-    resp.raise_for_status()
-    return resp.json()
-
-
 def get_quality_profile_id():
     """Resolve quality profile name to ID."""
     profiles = get_quality_profiles()

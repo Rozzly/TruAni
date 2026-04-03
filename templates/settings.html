@@ -21,6 +21,10 @@
             <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             Account
         </button>
+        <button class="settings-nav-link" onclick="showSection('updates', this)" id="nav-updates">
+            <svg class="settings-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Updates
+        </button>
     </nav>
 
     <!-- Content -->
@@ -118,7 +122,7 @@
         <div id="section-schedule" class="settings-section" style="display:none;">
             <div class="settings-section-header">
                 <h2>Refresh Schedule</h2>
-                <p>How often TruAni fetches new anime data from AniList and refreshes TVDB mappings.</p>
+                <p>How often TruAni fetches new anime data from AniList and refreshes Sonarr mappings.</p>
             </div>
             <div class="settings-section-body">
                 <form id="form-schedule" onsubmit="return saveSettings(event)">
@@ -180,6 +184,37 @@
             <div class="settings-section-footer">
                 <div></div>
                 <button class="btn btn-sm btn-primary" onclick="document.getElementById('form-user').requestSubmit()">Update</button>
+            </div>
+        </div>
+
+        <!-- Updates -->
+        <div id="section-updates" class="settings-section" style="display:none;">
+            <div class="settings-section-header">
+                <h2>Updates</h2>
+                <p>Check for and install updates.</p>
+            </div>
+            <div class="settings-section-body">
+                <div class="update-info">
+                    <div class="update-info-row">
+                        <span class="update-label">Current Version</span>
+                        <span class="font-mono" id="update-current">v{{ app_version }}</span>
+                    </div>
+                    <div class="update-info-row">
+                        <span class="update-label">Latest Version</span>
+                        <span class="font-mono" id="update-latest">
+                            <span class="text-muted">Checking...</span>
+                        </span>
+                    </div>
+                </div>
+                <div id="update-status" class="update-status" style="display:none;"></div>
+                <div id="update-changelog" class="update-changelog"></div>
+            </div>
+            <div class="settings-section-footer">
+                <div></div>
+                <div style="display:flex;gap:0.375rem;">
+                    <button class="btn btn-sm" id="btn-check-updates" onclick="checkForUpdates()">Check for Updates</button>
+                    <button class="btn btn-sm btn-primary" id="btn-apply-update" onclick="applyUpdate()" style="display:none;">Update Now</button>
+                </div>
             </div>
         </div>
 
@@ -367,6 +402,91 @@
         // Reload when URL or API key fields lose focus
         document.getElementById('sonarr_url').addEventListener('blur', loadSonarrOptions);
         document.getElementById('sonarr_api_key').addEventListener('blur', loadSonarrOptions);
+    })();
+
+    // --- Updates ---
+    async function checkForUpdates() {
+        var btn = document.getElementById('btn-check-updates');
+        document.getElementById('update-latest').innerHTML = '<span class="text-muted">Checking...</span>';
+        try {
+            var resp = await apiCall('/api/update/check?force=1');
+            if (!resp) return;
+            var latestEl = document.getElementById('update-latest');
+            if (resp.update_available) {
+                latestEl.innerHTML = 'v' + resp.latest_version + ' <span class="badge badge-new">new</span>';
+                document.getElementById('btn-apply-update').style.display = '';
+            } else {
+                latestEl.textContent = 'v' + resp.latest_version;
+                document.getElementById('btn-apply-update').style.display = 'none';
+            }
+            if (btn) btnSuccess(btn);
+        } catch (e) {
+            document.getElementById('update-latest').textContent = 'Check failed';
+        }
+
+        // Load changelog
+        try {
+            var changelog = await apiCall('/api/update/changelog');
+            var container = document.getElementById('update-changelog');
+            if (changelog && changelog.length > 0) {
+                container.innerHTML = '<h3 class="changelog-title">Changelog</h3>' + changelog.map(function(entry) {
+                    return '<div class="changelog-entry">'
+                        + '<span class="changelog-version">v' + escapeHtml(entry.version) + '</span>'
+                        + (entry.date ? '<span class="changelog-date">' + escapeHtml(entry.date) + '</span>' : '')
+                        + '<div class="changelog-body">' + escapeHtml(entry.changes) + '</div>'
+                        + '</div>';
+                }).join('');
+            }
+        } catch (e) {}
+    }
+
+    async function applyUpdate() {
+        showConfirmModal('Update TruAni', 'This will download the latest version and restart the application.', 'Update Now', async function() {
+            closeConfirmModal();
+            var statusEl = document.getElementById('update-status');
+            statusEl.style.display = '';
+            statusEl.textContent = 'Pulling latest changes...';
+            document.getElementById('btn-apply-update').disabled = true;
+
+            try {
+                var resp = await apiCall('/api/update/apply', { method: 'POST' });
+                if (resp && resp.success) {
+                    statusEl.textContent = resp.message + ' Restarting...';
+                    // Poll until the app is back up
+                    setTimeout(function pollRestart() {
+                        fetch('/login', { method: 'HEAD' })
+                            .then(function(r) {
+                                if (r.ok) window.location.reload();
+                                else setTimeout(pollRestart, 1000);
+                            })
+                            .catch(function() { setTimeout(pollRestart, 1000); });
+                    }, 3000);
+                } else if (resp) {
+                    statusEl.textContent = resp.message;
+                    document.getElementById('btn-apply-update').disabled = false;
+                }
+            } catch (e) {
+                statusEl.textContent = 'Update failed. Please try again.';
+                document.getElementById('btn-apply-update').disabled = false;
+            }
+        });
+    }
+
+    // Auto-check for updates when section is shown, and handle #updates hash
+    (function() {
+        var _origShow = showSection;
+        var _checkedUpdates = false;
+        showSection = function(id, el) {
+            _origShow(id, el);
+            if (id === 'updates' && !_checkedUpdates) {
+                _checkedUpdates = true;
+                checkForUpdates();
+            }
+        };
+        if (window.location.hash === '#updates') {
+            var navBtn = document.getElementById('nav-updates');
+            if (navBtn) showSection('updates', navBtn);
+        }
     })();
 </script>
 {% endblock %}

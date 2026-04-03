@@ -1571,13 +1571,13 @@ hr {
     border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
-    overflow: hidden;
     animation: settingsFadeIn 0.15s ease-out;
 }
 
 .settings-section-header {
     padding: 1.25rem 1.5rem 1rem;
     border-bottom: 1px solid var(--color-border-subtle);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .settings-section-header h2 {
@@ -1604,6 +1604,7 @@ hr {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
 .settings-status {
@@ -1647,6 +1648,22 @@ hr {
 .alert-error { background: var(--color-danger-bg); color: var(--color-danger); border: 1px solid var(--color-danger-border); }
 .alert-success { background: var(--color-success-bg); color: var(--color-success); border: 1px solid var(--color-success-border); }
 
+.alert-autodismiss {
+    transition: opacity 0.4s ease, margin 0.4s ease, padding 0.4s ease, max-height 0.4s ease;
+    max-height: 4rem;
+    overflow: hidden;
+}
+
+.alert-autodismiss.fade-out {
+    opacity: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    max-height: 0;
+    border-width: 0;
+}
+
 /* Inline field errors */
 .field-error {
     border-radius: var(--radius);
@@ -1657,12 +1674,19 @@ hr {
     font-weight: 500;
     color: var(--color-danger);
     margin-top: 0.375rem;
+    max-height: 4rem;
+    overflow: hidden;
     animation: fieldErrorIn 0.3s ease;
+    transition: opacity 0.4s ease, margin 0.4s ease, padding 0.4s ease, max-height 0.4s ease;
 }
 
 .field-error.fade-out {
     opacity: 0;
-    transition: opacity 0.3s;
+    margin-top: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    max-height: 0;
+    border-width: 0;
 }
 
 @keyframes fieldErrorIn {
@@ -2757,4 +2781,121 @@ html {
     }
     .header-actions-divider { display: none; }
     .btn { padding: 0.45rem 0.75rem; font-size: var(--text-sm); }
+}
+
+/* ================================================================
+   Footer
+   ================================================================ */
+
+.app-footer {
+    text-align: center;
+    padding: 1.5rem 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-faint);
+}
+
+.app-footer .font-mono {
+    font-family: var(--font-mono);
+}
+
+.footer-sep {
+    margin: 0 0.375rem;
+    opacity: 0.4;
+}
+
+/* ================================================================
+   Update Banner (dashboard)
+   ================================================================ */
+
+.update-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 1rem;
+    background: var(--color-primary-light);
+    border: 1px solid var(--color-primary);
+    border-radius: var(--radius-lg);
+    margin-bottom: 0.75rem;
+    font-size: var(--text-base);
+    color: var(--color-primary);
+    font-weight: 500;
+    transition: opacity 0.4s ease;
+}
+
+.update-banner.fade-out { opacity: 0; }
+
+.update-banner-actions {
+    display: flex;
+    gap: 0.375rem;
+    flex-shrink: 0;
+}
+
+/* ================================================================
+   Update Settings Section
+   ================================================================ */
+
+.update-info {
+    margin-bottom: 1rem;
+}
+
+.update-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+}
+
+.update-info-row + .update-info-row {
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.update-label {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+.update-status {
+    padding: 0.65rem 1rem;
+    border-radius: var(--radius);
+    background: var(--color-bg-inset);
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    margin-bottom: 1rem;
+}
+
+.changelog-title {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+.changelog-entry {
+    margin-bottom: 0.75rem;
+}
+
+.changelog-version {
+    font-weight: 700;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+}
+
+.changelog-date {
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    margin-left: 0.5rem;
+}
+
+.changelog-body {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    margin-top: 0.25rem;
+    white-space: pre-line;
+    line-height: 1.5;
 }

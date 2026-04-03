@@ -108,8 +108,11 @@ def _migrate():
     }
     with _connect() as conn:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(anime)").fetchall()}
+        _SAFE_COL_RE = __import__("re").compile(r'^[a-z_]+$')
         for col, col_type in anime_columns.items():
             if col not in existing:
+                if not _SAFE_COL_RE.match(col):
+                    raise ValueError(f"Invalid column name: {col}")
                 conn.execute(f"ALTER TABLE anime ADD COLUMN {col} {col_type}")
                 print(f"[DB] Migrated: added anime.{col}")
 
@@ -163,7 +166,7 @@ def validate_password(password):
 # --- Settings ---
 
 _DEFAULTS = {
-    "sonarr_url": "http://localhost:8989",
+    "sonarr_url": "",
     "sonarr_api_key": "",
     "sonarr_root_folder": "/tv/anime",
     "sonarr_quality_profile": "HD-1080p",

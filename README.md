@@ -7,20 +7,24 @@
 
 ---
 
-TruAni keeps your Sonarr library up to date with each anime season. It pulls the latest seasonal anime from AniList, matches them to TVDB, and lets you import them into Sonarr with a single click. No more manually searching for new shows every season.
+TruAni keeps your Sonarr instance up to date with the continuous release cycles of anime on a seasonal basis. It pulls the latest title list from AniList, matches them against TVDB, lets you selectively ignore titles you don't want, and seamlessly imports the rest into Sonarr for management.
 
-> **Note:** This is a personal project, built primarily as a learning experience. I run it on my own network and will fix issues as they come up, but I make no commitments to adding new features, functionality, or services. If it's useful to you too, great!
+## Why use TruAni?
+
+Sonarr supports import lists from popular sites, along with custom lists, however this relies on third-party accounts for API access and potential paywalls — *cough* Trakt *cough*. Alternatively, you can try to find existing lists in the correct format for Sonarr import, but that can be inconsistent and time consuming. TruAni is an easily deployed local app that provides a streamlined interface and automatic imports to make ingestion and management easy on a seasonal basis. What's another container in the stack?
+
+> **Note:** This is a personal project that solves a real problem, built primarily as a learning experience. I run it in my own lab and fix issues as they come up, but I make no commitments to adding new features, functionality, or services that don't fit my use case. If it's useful to you too, great!
 
 ## Screenshots
 
 <p align="center">
   <img src="docs/screenshots/dashboard.png" alt="Dashboard"><br>
-  <em>Dashboard — browse and manage seasonal anime</em>
+  <em>Dashboard — browse and manage seasonal titles</em>
 </p>
 
 <p align="center">
   <img src="docs/screenshots/scan.png" alt="Scanning"><br>
-  <em>Scanning — real-time progress as anime are discovered and matched</em>
+  <em>Scanning — real-time progress as titles are discovered and matched</em>
 </p>
 
 <p align="center">
@@ -30,32 +34,32 @@ TruAni keeps your Sonarr library up to date with each anime season. It pulls the
 
 ## Features
 
-- **Automatic discovery** — Fetches current and upcoming anime seasons from AniList, filtered by format and popularity
-- **Smart matching** — Resolves TVDB IDs through Sonarr's lookup API with intelligent title matching across English, romaji, and synonym titles
+- **Automatic discovery** — Fetches current and upcoming titles from AniList
+- **Smart matching** — Resolves TVDB IDs through Sonarr's lookup API with intelligent title matching
 - **One-click imports** — Select the shows you want and push them straight to Sonarr with your preferred quality profile, root folder, and tags
 - **Manual overrides** — If a title doesn't auto-match, you can set the TVDB ID yourself
 - **Scheduled refreshes** — Runs in the background on your schedule (every 6h, 12h, daily, or weekly)
-- **Ignore list** — Hide titles you don't want cluttering your dashboard
+- **Ignore list** — Selectively ignore titles that you don't want imported into Sonarr
 - **In-app updates** — Update to the latest version directly from the settings page
 - **Light and dark themes** — Follows your system preference or toggle manually
 
 ## Getting Started
 
-TruAni runs anywhere — pick whichever method fits your setup.
+TruAni runs anywhere with network access to your Sonarr instance — pick whichever method fits your setup.
 
 ### Proxmox LXC (recommended for Proxmox users)
 
-Run this on your Proxmox host and follow the prompts:
+Run this in your Proxmox host shell and follow the prompts:
 
 ```
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Rozzly/TruAni/main/scripts/install-lxc.sh)"
 ```
 
-This creates a Debian 13 container, installs everything, and starts the service. You'll be prompted for container settings with sensible defaults.
+This creates a Debian container, installs everything, and starts the service. You'll be prompted for container settings with suggested defaults.
 
 ### Any Debian/Ubuntu system
 
-Run inside an existing VM, container, or bare metal server:
+Run inside an existing VM or container:
 
 ```
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Rozzly/TruAni/main/scripts/install.sh)"
@@ -103,11 +107,12 @@ All data is stored in a single SQLite database. Everything can be re-fetched fro
 
 ## Security
 
-TruAni is built for home networks, not the public internet.
+TruAni is built for home networks and is not intended to be public facing, however basic security functionality is still included.
 
 - All pages require login (session-based with bcrypt password hashing)
 - Login rate limiting with automatic lockout after failed attempts
 - Default credentials must be changed on first login
+- Security headers on all responses
 - Runs as a non-root user inside the container
 
 ## Requirements

@@ -779,17 +779,20 @@
         }
     }
 
-    async function clearTvdb() {
-        if (!modalAnilistId || !confirm('Clear TVDB mapping?')) return;
-        setLoading(true);
-        const id = modalAnilistId;
-        const d = await apiCall('/api/tvdb/set', { method:'POST', body:JSON.stringify({anilist_id:id, tvdb_id:null}) });
-        setLoading(false);
-        if (d) showToast(d.message);
-        closeTvdbModal();
-        if (d?.status==='ok') {
-            _updateRowTvdb(id, null, null, null);
-        }
+    function clearTvdb() {
+        if (!modalAnilistId) return;
+        showConfirmModal('Clear TVDB Mapping', 'This will remove the current TVDB mapping for this anime.', 'Clear', async function() {
+            closeConfirmModal();
+            setLoading(true);
+            const id = modalAnilistId;
+            const d = await apiCall('/api/tvdb/set', { method:'POST', body:JSON.stringify({anilist_id:id, tvdb_id:null}) });
+            setLoading(false);
+            if (d) showToast(d.message);
+            closeTvdbModal();
+            if (d?.status==='ok') {
+                _updateRowTvdb(id, null, null, null);
+            }
+        });
     }
 
     document.getElementById('modal-tvdb-input').addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); verifyManualTvdb(); } });
@@ -813,7 +816,7 @@
         if (tvdbId) {
             row.classList.remove('row-unmapped');
             tvdbCell.setAttribute('onclick', `openTvdbLink(event, ${tvdbId})`);
-            tvdbCell.innerHTML = `<div class="tvdb-cell"><span class="tvdb-id">${tvdbId}</span><span class="tvdb-tag tvdb-tag-source">${source||''}</span></div>`;
+            tvdbCell.innerHTML = `<div class="tvdb-cell"><span class="tvdb-id">${tvdbId}</span><span class="tvdb-tag tvdb-tag-source">${escapeHtml(source||'')}</span></div>`;
             actionsCell.innerHTML = `<div class="row-actions"><button class="action-btn" onclick="editTvdb(${anilistId}, ${tvdbId})" title="Edit TVDB ID"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button><button class="action-btn action-btn-danger" onclick="ignoreSingle(${anilistId})" title="Ignore"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></button></div>`;
         } else {
             row.classList.add('row-unmapped');
@@ -1518,9 +1521,9 @@
                 var anchor = document.getElementById('action-bar-sticky');
                 var existing = document.querySelector('.empty-state');
                 if (!existing) {
-                    anchor.insertAdjacentHTML('afterend', '<div class="empty-state">No anime data for <strong>' + esc(data.season) + ' ' + data.year + '</strong>. Click <strong>Scan</strong> to fetch.</div>');
+                    anchor.insertAdjacentHTML('afterend', '<div class="empty-state">No anime data for <strong>' + esc(data.season) + ' ' + esc(String(data.year)) + '</strong>. Click <strong>Scan</strong> to fetch.</div>');
                 } else {
-                    existing.innerHTML = 'No anime data for <strong>' + esc(data.season) + ' ' + data.year + '</strong>. Click <strong>Scan</strong> to fetch.';
+                    existing.innerHTML = 'No anime data for <strong>' + esc(data.season) + ' ' + esc(String(data.year)) + '</strong>. Click <strong>Scan</strong> to fetch.';
                 }
             }
 

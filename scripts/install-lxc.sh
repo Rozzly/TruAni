@@ -397,7 +397,7 @@ while kill -0 "$INSTALL_PID" 2>/dev/null; do
 done
 wait "$INSTALL_PID"
 INSTALL_EXIT=$?
-printf "\r"
+printf "\r\033[K"
 
 if [[ "$INSTALL_EXIT" -ne 0 ]]; then
     msg_err "Installation failed"
@@ -440,3 +440,6 @@ echo ""
 echo -e "  Container: ${YW}$CT_ID${CL} ($CT_HOSTNAME)"
 echo -e "  Update:    ${YW}pct exec $CT_ID -- update${CL}"
 echo ""
+echo ""
+# Ensure the shell prompt appears below this output
+sleep 0.5

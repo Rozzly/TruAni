@@ -6,6 +6,7 @@ SECRET_KEY is generated on first run and stored in DB.
 
 import os
 import secrets
+import time as _time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,10 +34,9 @@ _CACHE_TTL = 30
 
 def _get(key, env_key=None, default=""):
     """Get setting from DB, falling back to env var. Cached for 30s."""
-    import time
-    now = time.monotonic()
+    now = _time.monotonic()
     cached = _settings_cache.get(key)
-    if cached and now < cached[1]:
+    if cached and now <= cached[1]:
         return cached[0]
     import db
     val = db.get_setting(key)

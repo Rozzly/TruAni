@@ -27,7 +27,7 @@ _STRIP_RE = re.compile(
 # Extraction patterns (return a season number)
 _ORDINALS = {"1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "5th": 5,
              "6th": 6, "7th": 7, "8th": 8, "9th": 9, "10th": 10}
-_ROMAN = {"II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6,
+_ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6,
           "VII": 7, "VIII": 8, "IX": 9, "X": 10}
 
 

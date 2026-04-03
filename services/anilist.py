@@ -96,7 +96,7 @@ def fetch_seasonal_anime(season, year):
     for m in all_media:
         # Skip shorts: exclude if duration is known and <= 15 minutes
         duration = m.get("duration")
-        if duration is not None and duration <= 15:
+        if duration is not None and duration > 0 and duration <= 15:
             continue
         has_prequel = _has_prequel(m)
         titles = [m["title"].get("english") or "", m["title"].get("romaji") or ""]
@@ -148,8 +148,7 @@ def _request(query, variables, retries=3):
             raise
 
         if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", 60))
-            print(f"[AniList] Rate limited, waiting {retry_after}s...")
+            retry_after = min(int(resp.headers.get("Retry-After", 60)), 300)
             time.sleep(retry_after)
             continue
 

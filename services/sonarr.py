@@ -1,8 +1,11 @@
 """Sonarr API client — adds series directly via the Sonarr v3/v4 API."""
 
+import logging
 import requests
 import config
 import db
+
+log = logging.getLogger("truani")
 
 _session = requests.Session()
 
@@ -75,7 +78,8 @@ def lookup_series(tvdb_id):
             return None
         s = results[0]
         return _parse_series(s)
-    except Exception:
+    except requests.RequestException as e:
+        log.warning("Sonarr lookup failed for tvdb:%s: %s", tvdb_id, e)
         return None
 
 
@@ -103,7 +107,8 @@ def search_series(title):
             if len(out) >= 8:
                 break
         return out
-    except Exception:
+    except requests.RequestException as e:
+        log.warning("Sonarr search failed for '%s': %s", title, e)
         return []
 
 
@@ -268,7 +273,8 @@ def sync_all(anime_list):
             resp = _session.post(_url("/series"), headers=_headers(), json=payload, timeout=15)
             if resp.status_code == 400:
                 body = resp.json()
-                if any("already been added" in str(e) for e in body):
+                body_str = str(body).lower()
+                if "already been added" in body_str or "already exists" in body_str:
                     results.append((anime["anilist_id"], "exists", "Already in Sonarr", None))
                     existing.add(tvdb_id)
                     continue

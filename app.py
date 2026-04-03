@@ -1,5 +1,6 @@
 import functools
 import json
+import logging
 import threading
 import time as _time
 from datetime import datetime, timezone, timedelta
@@ -17,6 +18,13 @@ import db
 from services.anilist import current_season, next_season, fetch_seasonal_anime
 from services.mapping import resolve_tvdb_id, rescan_tvdb_id
 from services.sonarr import test_connection, sync_all, lookup_series, get_existing_series
+
+log = logging.getLogger("truani")
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
+)
 
 app = Flask(__name__)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -46,6 +54,11 @@ def _close_db(exc):
 
 _refresh_lock = threading.Lock()
 _refresh_status = "idle"
+_status_lock = threading.Lock()
+
+def _get_refresh_status():
+    with _status_lock:
+        return _refresh_status
 
 def _get_last_refresh():
     return db.get_setting("last_refresh")
@@ -94,6 +107,7 @@ def _build_entry(anime, tvdb_id, tvdb_title, source, sonarr_tvdb_ids):
 # --- Auth ---
 
 _login_attempts = {}  # IP -> (fail_count, first_failure_time)
+_login_lock = threading.Lock()
 _LOGIN_MAX_ATTEMPTS = 10
 _LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes
 
@@ -101,29 +115,32 @@ _LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes
 def _check_rate_limit(ip):
     """Return (is_locked, seconds_remaining). Cleans up stale entries."""
     now = _time.monotonic()
-    entry = _login_attempts.get(ip)
-    if not entry:
-        return False, 0
-    count, first_failure = entry
-    if now - first_failure > _LOGIN_LOCKOUT_SECONDS:
-        del _login_attempts[ip]
-        return False, 0
-    if count >= _LOGIN_MAX_ATTEMPTS:
-        return True, int(_LOGIN_LOCKOUT_SECONDS - (now - first_failure))
+    with _login_lock:
+        entry = _login_attempts.get(ip)
+        if not entry:
+            return False, 0
+        count, first_failure = entry
+        if now - first_failure > _LOGIN_LOCKOUT_SECONDS:
+            del _login_attempts[ip]
+            return False, 0
+        if count >= _LOGIN_MAX_ATTEMPTS:
+            return True, int(_LOGIN_LOCKOUT_SECONDS - (now - first_failure))
     return False, 0
 
 
 def _record_failure(ip):
     now = _time.monotonic()
-    entry = _login_attempts.get(ip)
-    if entry and now - entry[1] <= _LOGIN_LOCKOUT_SECONDS:
-        _login_attempts[ip] = (entry[0] + 1, entry[1])
-    else:
-        _login_attempts[ip] = (1, now)
+    with _login_lock:
+        entry = _login_attempts.get(ip)
+        if entry and now - entry[1] <= _LOGIN_LOCKOUT_SECONDS:
+            _login_attempts[ip] = (entry[0] + 1, entry[1])
+        else:
+            _login_attempts[ip] = (1, now)
 
 
 def _clear_failures(ip):
-    _login_attempts.pop(ip, None)
+    with _login_lock:
+        _login_attempts.pop(ip, None)
 
 
 def _validate_url_scheme(url):
@@ -131,7 +148,7 @@ def _validate_url_scheme(url):
     try:
         parsed = urlparse(url)
         return parsed.scheme in ("http", "https")
-    except Exception:
+    except (ValueError, AttributeError):
         return False
 
 
@@ -276,7 +293,7 @@ def _refresh_generator(season=None, year=None, fresh=False):
             active_list.append(anime)
 
     total = len(active_list)
-    yield event("fetch", f"Found {total} titles" + (f" ({ignored_count} ignored)" if ignored_count else ""), progress=6, count=total)
+    yield event("fetch", f"Found {total} titles on AniList" + (f" ({ignored_count} ignored)" if ignored_count else ""), progress=6, count=total)
 
     # Refresh Sonarr status — check which TVDB IDs are actually in Sonarr
     sonarr_tvdb_ids = set()
@@ -400,7 +417,7 @@ def refresh_data(season=None, year=None):
 
     except Exception as e:
         _refresh_status = "error"
-        print(f"[Refresh] Error: {e}")
+        log.error("Refresh error: %s", e)
         return {"status": "error", "message": "An unexpected error occurred during refresh"}
     finally:
         _refresh_lock.release()
@@ -539,15 +556,21 @@ def api_refresh_stream():
     def generate():
         global _refresh_status
         try:
-            _refresh_status = "running"
+            with _status_lock:
+                _refresh_status = "running"
             for sse_event in _sse_format(_refresh_generator(season, year, fresh=fresh)):
                 yield sse_event
             _set_last_refresh(datetime.now(timezone.utc).isoformat())
-            _refresh_status = "idle"
+            with _status_lock:
+                _refresh_status = "idle"
+        except GeneratorExit:
+            with _status_lock:
+                _refresh_status = "idle"
         except Exception as e:
-            print(f"[SSE] Error: {e}")
+            log.error("SSE refresh error: %s", e)
             yield f'data: {json.dumps({"step":"error","detail":"An unexpected error occurred"})}\n\n'
-            _refresh_status = "error"
+            with _status_lock:
+                _refresh_status = "error"
         finally:
             _refresh_lock.release()
 
@@ -563,7 +586,7 @@ def api_rescan():
     anilist_ids = data.get("anilist_ids", [])
 
     if not anilist_ids:
-        return jsonify({"status": "error", "message": "No anime IDs provided"})
+        return jsonify({"status": "error", "message": "No anime IDs provided"}), 400
 
     anime_list = db.get_anime_by_anilist_ids(anilist_ids)
     found = 0
@@ -603,7 +626,7 @@ def api_ignore():
     ignored = data.get("ignored", True)
 
     if not anilist_ids:
-        return jsonify({"status": "error", "message": "No anime IDs provided"})
+        return jsonify({"status": "error", "message": "No anime IDs provided"}), 400
 
     db.set_ignored_bulk(anilist_ids, ignored)
     action = "ignored" if ignored else "restored"
@@ -678,7 +701,7 @@ def api_tvdb_verify():
 
     info = lookup_series(tvdb_id)
     if not info:
-        return jsonify({"status": "error", "message": f"TVDB ID {tvdb_id} not found"})
+        return jsonify({"status": "error", "message": "TVDB ID not found"}), 404
 
     info["source"] = "sonarr"
     return jsonify({"status": "ok", "series": info})
@@ -708,8 +731,8 @@ def api_sync():
     try:
         results = sync_all(syncable)
     except Exception as e:
-        print(f"[Sync] Error: {e}")
-        return jsonify({"status": "error", "message": "An unexpected error occurred during sync"})
+        log.error("Sync error: %s", e)
+        return jsonify({"status": "error", "message": "An unexpected error occurred during sync"}), 500
 
     statuses = {}
     details = []
@@ -742,7 +765,6 @@ def api_settings():
         "sonarr_quality_profile", "sonarr_series_type", "sonarr_monitor",
         "sonarr_season_folder", "sonarr_search_on_add", "sonarr_tags",
         "refresh_frequency", "refresh_time", "refresh_day",
-        "setup_complete",
     }
 
     to_save = {k: v for k, v in data.items() if k in allowed_keys}
@@ -783,10 +805,10 @@ def api_sonarr_options():
     api_key = data.get("sonarr_api_key") or config.sonarr_api_key()
 
     if url and not _validate_url_scheme(url):
-        return jsonify({"status": "error", "message": "URL must use http:// or https://"})
+        return jsonify({"status": "error", "message": "URL must use http:// or https://"}), 400
 
     if not url or not api_key or api_key == "your_sonarr_api_key_here":
-        return jsonify({"status": "error", "message": "URL and API key required"})
+        return jsonify({"status": "error", "message": "URL and API key required"}), 400
 
     headers = {"X-Api-Key": api_key}
     result = {"status": "ok", "root_folders": [], "quality_profiles": []}
@@ -806,13 +828,13 @@ def api_sonarr_options():
         rf_future = pool.submit(fetch_root_folders)
         qp_future = pool.submit(fetch_quality_profiles)
         try:
-            result["root_folders"] = rf_future.result()
-        except Exception:
-            pass
+            result["root_folders"] = rf_future.result(timeout=15)
+        except Exception as e:
+            log.warning("Failed to fetch root folders: %s", e)
         try:
-            result["quality_profiles"] = qp_future.result()
-        except Exception:
-            pass
+            result["quality_profiles"] = qp_future.result(timeout=15)
+        except Exception as e:
+            log.warning("Failed to fetch quality profiles: %s", e)
 
     return jsonify(result)
 
@@ -858,7 +880,7 @@ def api_clear_cache():
 def api_status():
     sonarr_ok, sonarr_msg = test_connection()
     return jsonify({
-        "refresh_status": _refresh_status,
+        "refresh_status": _get_refresh_status(),
         "last_refresh": _get_last_refresh(),
         "sonarr": {"connected": sonarr_ok, "message": sonarr_msg},
     })
@@ -940,13 +962,13 @@ def start_scheduler():
                        id="update_check", replace_existing=True)
 
     _scheduler.start()
-    print(f"[Scheduler] Refresh scheduled: {config.refresh_frequency()} at {config.refresh_time()}")
+    log.info("Refresh scheduled: %s at %s", config.refresh_frequency(), config.refresh_time())
 
 
 def _reschedule():
     if _scheduler:
         _scheduler.reschedule_job("refresh", trigger=_build_trigger())
-        print(f"[Scheduler] Rescheduled: {config.refresh_frequency()} at {config.refresh_time()}")
+        log.info("Rescheduled: %s at %s", config.refresh_frequency(), config.refresh_time())
 
 
 if __name__ == "__main__":
@@ -955,7 +977,7 @@ if __name__ == "__main__":
 
     start_scheduler()
 
-    print(f"[Startup] Ready — refresh data from the web UI or wait for scheduled refresh")
+    log.info("Ready — refresh data from the web UI or wait for scheduled refresh")
 
     from waitress import serve
     serve(app, host="0.0.0.0", port=config.FLASK_PORT)

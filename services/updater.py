@@ -8,9 +8,12 @@ import sys
 import subprocess
 import threading
 
+import logging
 import requests
 import db
 import config
+
+log = logging.getLogger("truani")
 
 GITHUB_REPO = "Rozzly/TruAni"
 _APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,8 +25,8 @@ def _compare_versions(current, latest):
     """Return True if latest > current using semver comparison."""
     def parse(v):
         v = v.lstrip("v")
-        parts = v.split(".")
-        return tuple(int(p) for p in parts if p.isdigit())
+        parts = v.split(".")[:3]
+        return tuple(int(p) for p in parts)
     try:
         return parse(latest) > parse(current)
     except (ValueError, TypeError):
@@ -31,7 +34,7 @@ def _compare_versions(current, latest):
 
 
 def check_for_update(force=False):
-    """Check GitHub for a newer version. Cached for 6 hours."""
+    """Check GitHub for a newer version. Cached for 1 week."""
     if not force:
         cached = db.get_cache("update_check")
         if cached is not None:
@@ -72,14 +75,14 @@ def check_for_update(force=False):
                     result["latest_version"] = latest
                     result["update_available"] = _compare_versions(current, latest)
     except Exception as e:
-        print(f"[Update] Check failed: {e}")
+        log.warning("Update check failed: %s", e)
 
-    db.set_cache("update_check", result, ttl_seconds=604800)  # 1 week  # 6 hours
+    db.set_cache("update_check", result, ttl_seconds=604800)  # 1 week
     return result
 
 
 def get_changelog():
-    """Get changelog from GitHub releases (past 4 versions). Cached for 6 hours."""
+    """Get changelog from GitHub releases (past 4 versions). Cached for 1 week."""
     cached = db.get_cache("update_changelog")
     if cached is not None:
         return cached
@@ -98,7 +101,7 @@ def get_changelog():
                     "changes": release.get("body", ""),
                 })
     except Exception as e:
-        print(f"[Update] Changelog fetch failed: {e}")
+        log.warning("Changelog fetch failed: %s", e)
 
     # Fallback: if no releases, use git log
     if not entries:
@@ -158,7 +161,7 @@ def perform_update():
                 capture_output=True, text=True, cwd=_APP_DIR, timeout=120,
             )
             if pip_result.returncode != 0:
-                print(f"[Update] pip install warning: {pip_result.stderr.strip()}")
+                return {"success": False, "message": f"Dependency install failed: {pip_result.stderr.strip()}"}
 
         # Read new version
         version_path = os.path.join(_APP_DIR, "VERSION")
@@ -180,13 +183,13 @@ def perform_update():
         }
 
     except Exception as e:
-        print(f"[Update] Failed: {e}")
+        log.error("Update failed: %s", e)
         return {"success": False, "message": f"Update failed: {e}"}
 
 
 def schedule_restart():
     """Schedule a process restart after a short delay (lets HTTP response finish)."""
     def _restart():
-        print("[Update] Restarting application...")
+        log.info("Restarting application...")
         os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Timer(2.0, _restart).start()

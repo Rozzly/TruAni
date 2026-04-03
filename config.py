@@ -64,7 +64,7 @@ def get_secret_key():
 
 # Accessors — called at request time so they pick up DB changes
 def sonarr_url():
-    return _get("sonarr_url", "SONARR_URL", "http://localhost:8989").rstrip("/")
+    return _get("sonarr_url", "SONARR_URL", "").rstrip("/")
 
 def sonarr_api_key():
     return _get("sonarr_api_key", "SONARR_API_KEY", "")

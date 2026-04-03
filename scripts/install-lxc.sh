@@ -99,7 +99,7 @@ trap tui_exit EXIT
 
 # --- 1. Welcome ---
 whiptail --title "TruAni" --backtitle "$BACKTITLE" --msgbox "\
-    TruAni - Seasonal Anime Manager
+    TruAni - Seasonal Anime Manager for Sonarr
 
  This will create a Debian LXC container
  and install TruAni with all dependencies.

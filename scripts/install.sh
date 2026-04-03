@@ -78,7 +78,7 @@ chown -R "$APP_USER":"$APP_USER" "$APP_DIR"
 msg_info "Creating systemd service"
 cat > /etc/systemd/system/truani.service <<EOF
 [Unit]
-Description=TruAni - Seasonal Anime Manager
+Description=TruAni - Seasonal Anime Manager for Sonarr
 After=network.target
 
 [Service]

@@ -131,11 +131,11 @@
     <div class="action-bar-right">
         <button class="btn btn-danger" onclick="confirmIgnoreSelected()" id="btn-ignore-selected" disabled>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-            Ignore<span class="btn-count" id="ignore-count" style="display:none"></span>
+            Ignore
         </button>
         <button class="btn btn-primary" onclick="syncSelected()" id="btn-sync" disabled>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add to Sonarr<span class="btn-count" id="sync-count" style="display:none"></span>
+            Add to Sonarr
         </button>
         <span class="header-actions-divider"></span>
         <div class="btn-split">
@@ -159,11 +159,11 @@
 </div><!-- /action-bar-sticky -->
 
 {% if anime_list %}
-<div class="table-wrapper" id="table-wrapper">
+<div class="table-wrapper has-visible-rows" id="table-wrapper">
     <table class="data-table" id="anime-table">
         <thead>
             <tr>
-                <th class="col-check" style="width:3%"><input type="checkbox" id="select-all" title="Select all mapped"></th>
+                <th class="col-check" style="width:3%" onclick="var cb=document.getElementById('select-all');if(event.target!==cb){cb.checked=!cb.checked;cb.dispatchEvent(new Event('change',{bubbles:true}));}"><input type="checkbox" id="select-all" title="Select all mapped"></th>
                 <th class="col-cover" style="width:4%"></th>
                 <th class="sortable col-title" style="width:30%" data-col="title">Title</th>
                 <th class="sortable col-type" style="width:6%" data-col="format">Type</th>
@@ -588,7 +588,7 @@
 
     function updateCount() {
         const checks = document.querySelectorAll('.row-check');
-        let n = 0;
+        let n = 0, total = checks.length;
         checks.forEach(function(cb) {
             var row = cb.closest('tr');
             if (cb.checked) { n++; row && row.classList.add('row-selected'); }
@@ -596,15 +596,10 @@
         });
         btnIgnore.disabled = n === 0;
         btnSync.disabled = n === 0;
-        const ignoreCount = document.getElementById('ignore-count');
-        const syncCount = document.getElementById('sync-count');
-        if (ignoreCount) {
-            ignoreCount.textContent = n;
-            ignoreCount.style.display = n > 0 ? '' : 'none';
-        }
-        if (syncCount) {
-            syncCount.textContent = n;
-            syncCount.style.display = n > 0 ? '' : 'none';
+        var sa = document.getElementById('select-all');
+        if (sa) {
+            sa.checked = n > 0 && n === total;
+            sa.indeterminate = n > 0 && n < total;
         }
     }
 
@@ -625,7 +620,12 @@
     // Use event delegation so dynamically added checkboxes work after tab switch
     document.addEventListener('change', function(e) {
         if (e.target.id === 'select-all') {
-            document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = e.target.checked; });
+            var checked = e.target.checked;
+            document.querySelectorAll('#anime-table tbody tr').forEach(function(row) {
+                if (row.style.display === 'none') return;
+                var cb = row.querySelector('.row-check');
+                if (cb) cb.checked = checked;
+            });
             updateCount();
         } else if (e.target.classList.contains('row-check')) {
             updateCount();
@@ -663,14 +663,23 @@
     }
 
     function applyFilters() {
+        document.querySelectorAll('.row-check:checked').forEach(function(cb) { cb.checked = false; });
+        var sa = document.getElementById('select-all');
+        if (sa) sa.checked = false;
+        updateCount();
         var q = (document.getElementById('table-search') || {}).value || '';
         q = q.toLowerCase().trim();
+        var visibleCount = 0;
         document.querySelectorAll('#anime-table tbody tr').forEach(function(row) {
             var title = (row.dataset.title || '').toLowerCase();
             var matchesSearch = !q || title.includes(q);
             var matchesFilter = !activeStatFilter || rowMatchesFilter(row, activeStatFilter);
-            row.style.display = (matchesSearch && matchesFilter) ? '' : 'none';
+            var visible = matchesSearch && matchesFilter;
+            row.style.display = visible ? '' : 'none';
+            if (visible) visibleCount++;
         });
+        var wrapper = document.getElementById('table-wrapper');
+        if (wrapper) wrapper.classList.toggle('has-visible-rows', visibleCount > 0);
     }
 
     (function() {
@@ -1489,7 +1498,7 @@
                     if (emptyState) emptyState.remove();
                     var actionBar = document.getElementById('action-bar-sticky');
                     var html = '<div class="table-wrapper" id="table-wrapper"><table class="data-table" id="anime-table"><thead><tr>'
-                        + '<th class="col-check" style="width:3%"><input type="checkbox" id="select-all" title="Select all mapped"></th>'
+                        + '<th class="col-check" style="width:3%" onclick="var cb=document.getElementById(\'select-all\');if(event.target!==cb){cb.checked=!cb.checked;cb.dispatchEvent(new Event(\'change\',{bubbles:true}));}"><input type="checkbox" id="select-all" title="Select all mapped"></th>'
                         + '<th class="col-cover" style="width:4%"></th>'
                         + '<th class="sortable col-title" style="width:30%" data-col="title">Title</th>'
                         + '<th class="sortable col-type" style="width:6%" data-col="format">Type</th>'

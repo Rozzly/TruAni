@@ -3,7 +3,7 @@
 {% block alerts %}{% endblock %}
 
 {% block content %}
-<div class="login-wrapper">
+<div class="login-wrapper {% if step == 2 %}setup-step2{% endif %}">
 
     <!-- Step 1: Credentials -->
     <div id="setup-step1" class="login-card" {% if step == 2 %}style="display:none"{% endif %}>
@@ -30,7 +30,7 @@
         </div>
         <h1 class="login-title">TruAni</h1>
         <p class="login-subtitle">Set up your account</p>
-        <p class="login-subtitle" style="font-size:0.8rem;opacity:0.7;margin-top:0.25rem;">Change the default credentials to secure your instance.</p>
+        <p class="login-subtitle login-subtitle-hint">Change the default credentials to secure your instance.</p>
         <form id="setup-form" onsubmit="return submitSetup(event)">
             <div class="form-group">
                 <label for="setup-username">Username</label>
@@ -49,7 +49,7 @@
     </div>
 
     <!-- Step 2: Sonarr Configuration -->
-    <div id="setup-step2" class="settings-section" style="{% if step != 2 %}display:none;{% endif %}max-width:480px;width:100%;">
+    <div id="setup-step2" class="settings-section" {% if step != 2 %}style="display:none;"{% endif %}>
         <div class="settings-section-header">
             <h2>Connect Sonarr</h2>
             <p>Configure your Sonarr instance for anime imports. You can change these later in Settings.</p>
@@ -57,7 +57,7 @@
         <div class="settings-section-body">
             <div class="form-group">
                 <label for="setup-sonarr-url">Sonarr URL</label>
-                <input type="url" id="setup-sonarr-url" value="{{ settings.sonarr_url }}" placeholder="http://localhost:8989">
+                <input type="url" id="setup-sonarr-url" value="{{ settings.sonarr_url }}" placeholder="http://192.168.1.100:8989">
             </div>
             <div class="form-group">
                 <label for="setup-sonarr-key">API Key</label>
@@ -102,22 +102,22 @@
                 </div>
             </div>
             <div class="toggle-row">
-                <label>Season Folders</label>
                 <label class="toggle">
                     <input type="checkbox" id="setup-sonarr-season-folder"
                            {{ 'checked' if settings.sonarr_season_folder in ('true','True','1') }}>
                     <span class="toggle-slider"></span>
                 </label>
+                <label>Season Folders</label>
             </div>
             <div class="toggle-row">
-                <label>Search on Add</label>
                 <label class="toggle">
                     <input type="checkbox" id="setup-sonarr-search-on-add"
                            {{ 'checked' if settings.sonarr_search_on_add in ('true','True','1') }}>
                     <span class="toggle-slider"></span>
                 </label>
+                <label>Search on Add</label>
             </div>
-            <div class="form-group" style="margin-top:0.5rem;">
+            <div class="form-group">
                 <label for="setup-sonarr-tags">Tags <span class="hint">(comma separated)</span></label>
                 <input type="text" id="setup-sonarr-tags" value="{{ settings.sonarr_tags }}" placeholder="anime, seasonal">
             </div>
@@ -164,6 +164,7 @@
                 // Transition to step 2
                 document.getElementById('setup-step1').style.display = 'none';
                 document.getElementById('setup-step2').style.display = '';
+                document.querySelector('.login-wrapper').classList.add('setup-step2');
             } else if (resp && resp.message) {
                 var fieldMap = { username: 'setup-username', new_password: 'setup-password', confirm_password: 'setup-confirm' };
                 showFieldError(fieldMap[resp.field] || 'setup-password', resp.message);
@@ -291,7 +292,8 @@
         }
     }
 
-    // Reset test state when URL or key changes
+    var _lastAutoTestKey = '';
+
     function _resetSonarrTest() {
         _sonarrTestPassed = false;
         document.getElementById('setup-sonarr-save').disabled = true;
@@ -299,7 +301,26 @@
         document.getElementById('setup-sonarr-status').textContent = 'Not configured';
     }
 
-    document.getElementById('setup-sonarr-url').addEventListener('input', _resetSonarrTest);
-    document.getElementById('setup-sonarr-key').addEventListener('input', _resetSonarrTest);
+    document.getElementById('setup-sonarr-url').addEventListener('input', function() {
+        _resetSonarrTest();
+        _lastAutoTestKey = '';
+    });
+    document.getElementById('setup-sonarr-key').addEventListener('input', function() {
+        _resetSonarrTest();
+        _lastAutoTestKey = '';
+    });
+
+    // Auto-test once when both fields are valid and values have changed
+    function _autoTestSonarr() {
+        var url = document.getElementById('setup-sonarr-url').value.trim();
+        var key = document.getElementById('setup-sonarr-key').value.trim();
+        if (!url || key.length < 32 || _sonarrTestPassed) return;
+        var fingerprint = url + '|' + key;
+        if (fingerprint === _lastAutoTestKey) return;
+        _lastAutoTestKey = fingerprint;
+        setupTestSonarr();
+    }
+    document.getElementById('setup-sonarr-url').addEventListener('blur', _autoTestSonarr);
+    document.getElementById('setup-sonarr-key').addEventListener('blur', _autoTestSonarr);
 </script>
 {% endblock %}

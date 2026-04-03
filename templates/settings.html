@@ -40,7 +40,7 @@
                 <form id="form-sonarr" onsubmit="return saveSettings(event)">
                     <div class="form-group">
                         <label for="sonarr_url">Sonarr URL</label>
-                        <input type="url" id="sonarr_url" name="sonarr_url" value="{{ settings.sonarr_url }}" placeholder="http://localhost:8989">
+                        <input type="url" id="sonarr_url" name="sonarr_url" value="{{ settings.sonarr_url }}" placeholder="http://192.168.1.100:8989">
                     </div>
                     <div class="form-group">
                         <label for="sonarr_api_key">API Key</label>
@@ -85,22 +85,22 @@
                         </div>
                     </div>
                     <div class="toggle-row">
-                        <label>Season Folders</label>
                         <label class="toggle">
                             <input type="checkbox" id="sonarr_season_folder" name="sonarr_season_folder"
                                    {{ 'checked' if settings.sonarr_season_folder in ('true','True','1') }}>
                             <span class="toggle-slider"></span>
                         </label>
+                        <label>Season Folders</label>
                     </div>
                     <div class="toggle-row">
-                        <label>Search on Add</label>
                         <label class="toggle">
                             <input type="checkbox" id="sonarr_search_on_add" name="sonarr_search_on_add"
                                    {{ 'checked' if settings.sonarr_search_on_add in ('true','True','1') }}>
                             <span class="toggle-slider"></span>
                         </label>
+                        <label>Search on Add</label>
                     </div>
-                    <div class="form-group" style="margin-top:0.5rem;">
+                    <div class="form-group">
                         <label for="sonarr_tags">Tags <span class="hint">(comma separated)</span></label>
                         <input type="text" id="sonarr_tags" name="sonarr_tags" value="{{ settings.sonarr_tags }}" placeholder="anime, seasonal">
                     </div>
@@ -193,29 +193,40 @@
                 <h2>Updates</h2>
                 <p>Check for and install updates.</p>
             </div>
-            <div class="settings-section-body">
-                <div class="update-info">
-                    <div class="update-info-row">
-                        <span class="update-label">Current Version</span>
-                        <span class="font-mono" id="update-current">v{{ app_version }}</span>
-                    </div>
-                    <div class="update-info-row">
-                        <span class="update-label">Latest Version</span>
-                        <span class="font-mono" id="update-latest">
-                            <span class="text-muted">Checking...</span>
-                        </span>
+            <div class="update-header">
+                <!-- Checking state -->
+                <div class="update-versions" id="update-state-checking">
+                    <div class="update-version-pill">
+                        <span class="update-version-value"><span class="skeleton skeleton-text" style="width:5rem;display:inline-block;"></span></span>
                     </div>
                 </div>
-                <div id="update-status" class="update-status" style="display:none;"></div>
-                <div id="update-changelog" class="update-changelog"></div>
-            </div>
-            <div class="settings-section-footer">
-                <div></div>
-                <div style="display:flex;gap:0.375rem;">
-                    <button class="btn btn-sm" id="btn-check-updates" onclick="checkForUpdates()">Check for Updates</button>
+                <!-- Up to date state -->
+                <div class="update-versions" id="update-state-current" style="display:none;">
+                    <div class="update-version-pill update-pill-ok">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                        <span class="update-version-value" id="update-current-ok">v{{ app_version }}</span>
+                        <span class="update-version-label">Up to date</span>
+                    </div>
+                </div>
+                <!-- Update available state -->
+                <div class="update-versions" id="update-state-available" style="display:none;">
+                    <div class="update-version-pill">
+                        <span class="update-version-label">Installed</span>
+                        <span class="update-version-value" id="update-current">v{{ app_version }}</span>
+                    </div>
+                    <svg class="update-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+                    <div class="update-version-pill has-update">
+                        <span class="update-version-label">Latest</span>
+                        <span class="update-version-value" id="update-latest"></span>
+                    </div>
+                </div>
+                <div class="update-actions">
+                    <button class="btn btn-sm" id="btn-check-updates" onclick="checkForUpdates()">Check</button>
                     <button class="btn btn-sm btn-primary" id="btn-apply-update" onclick="applyUpdate()" style="display:none;">Update Now</button>
                 </div>
             </div>
+            <div id="update-status" class="update-status" style="display:none;"></div>
+            <div id="update-changelog" class="update-changelog"></div>
         </div>
 
     </div>
@@ -259,10 +270,31 @@
 </script>
 <script>
     function showSection(id, el) {
-        document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
-        document.getElementById('section-' + id).style.display = '';
+        var current = document.querySelector('.settings-section:not([style*="display:none"]):not([style*="display: none"])');
+        var next = document.getElementById('section-' + id);
         document.querySelectorAll('.settings-nav-link').forEach(l => l.classList.remove('active'));
         el.classList.add('active');
+        if (current && current !== next) {
+            current.classList.add('leaving');
+            current.addEventListener('animationend', function handler() {
+                current.removeEventListener('animationend', handler);
+                current.classList.remove('leaving');
+                current.style.display = 'none';
+                next.style.display = '';
+                next.classList.add('entering');
+                next.addEventListener('animationend', function h2() {
+                    next.removeEventListener('animationend', h2);
+                    next.classList.remove('entering');
+                });
+            });
+        } else {
+            next.style.display = '';
+            next.classList.add('entering');
+            next.addEventListener('animationend', function h() {
+                next.removeEventListener('animationend', h);
+                next.classList.remove('entering');
+            });
+        }
     }
 
     function submitForm(formId) {
@@ -395,39 +427,67 @@
 
     // Load options on page load if URL+key are already set
     (function() {
+        var lastOptionsKey = '';
         var url = document.getElementById('sonarr_url').value.trim();
         var key = document.getElementById('sonarr_api_key').value.trim();
-        if (url && key) loadSonarrOptions();
+        if (url && key) {
+            lastOptionsKey = url + '|' + key;
+            loadSonarrOptions();
+        }
 
-        // Reload when URL or API key fields lose focus
-        document.getElementById('sonarr_url').addEventListener('blur', loadSonarrOptions);
-        document.getElementById('sonarr_api_key').addEventListener('blur', loadSonarrOptions);
+        function _autoLoadOptions() {
+            var u = document.getElementById('sonarr_url').value.trim();
+            var k = document.getElementById('sonarr_api_key').value.trim();
+            if (!u || k.length < 32) return;
+            var fp = u + '|' + k;
+            if (fp === lastOptionsKey) return;
+            lastOptionsKey = fp;
+            loadSonarrOptions();
+        }
+        document.getElementById('sonarr_url').addEventListener('blur', _autoLoadOptions);
+        document.getElementById('sonarr_api_key').addEventListener('blur', _autoLoadOptions);
     })();
 
     // --- Updates ---
+    function _showUpdateState(state) {
+        document.getElementById('update-state-checking').style.display = state === 'checking' ? '' : 'none';
+        document.getElementById('update-state-current').style.display = state === 'current' ? '' : 'none';
+        document.getElementById('update-state-available').style.display = state === 'available' ? '' : 'none';
+    }
+
     async function checkForUpdates() {
         var btn = document.getElementById('btn-check-updates');
-        document.getElementById('update-latest').innerHTML = '<span class="text-muted">Checking...</span>';
+        _showUpdateState('checking');
+        document.getElementById('btn-apply-update').style.display = 'none';
         try {
             var resp = await apiCall('/api/update/check?force=1');
             if (!resp) return;
-            var latestEl = document.getElementById('update-latest');
             if (resp.update_available) {
-                latestEl.innerHTML = 'v' + resp.latest_version + ' <span class="badge badge-new">new</span>';
+                document.getElementById('update-latest').textContent = 'v' + resp.latest_version;
                 document.getElementById('btn-apply-update').style.display = '';
+                _showUpdateState('available');
             } else {
-                latestEl.textContent = 'v' + resp.latest_version;
-                document.getElementById('btn-apply-update').style.display = 'none';
+                document.getElementById('update-current-ok').textContent = 'v' + resp.latest_version;
+                _showUpdateState('current');
             }
             if (btn) btnSuccess(btn);
         } catch (e) {
-            document.getElementById('update-latest').textContent = 'Check failed';
+            _showUpdateState('current');
+            document.getElementById('update-current-ok').textContent = 'v{{ app_version }}';
         }
 
         // Load changelog
         try {
-            var changelog = await apiCall('/api/update/changelog');
             var container = document.getElementById('update-changelog');
+            container.innerHTML = '<div class="changelog-skeleton">'
+                + '<div class="skeleton skeleton-text" style="width:6rem;height:0.6rem;margin-bottom:0.75rem;"></div>'
+                + '<div class="skeleton skeleton-text" style="width:100%;margin-bottom:0.4rem;"></div>'
+                + '<div class="skeleton skeleton-text" style="width:85%;margin-bottom:0.4rem;"></div>'
+                + '<div class="skeleton skeleton-text" style="width:70%;margin-bottom:1rem;"></div>'
+                + '<div class="skeleton skeleton-text" style="width:100%;margin-bottom:0.4rem;"></div>'
+                + '<div class="skeleton skeleton-text" style="width:60%;"></div>'
+                + '</div>';
+            var changelog = await apiCall('/api/update/changelog');
             if (changelog && changelog.length > 0) {
                 container.innerHTML = '<h3 class="changelog-title">Changelog</h3>' + changelog.map(function(entry) {
                     return '<div class="changelog-entry">'
@@ -436,8 +496,10 @@
                         + '<div class="changelog-body">' + escapeHtml(entry.changes) + '</div>'
                         + '</div>';
                 }).join('');
+            } else {
+                container.innerHTML = '';
             }
-        } catch (e) {}
+        } catch (e) { container.innerHTML = ''; }
     }
 
     async function applyUpdate() {

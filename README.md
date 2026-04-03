@@ -1,113 +1,92 @@
-# TruAni
+<p align="center">
+  <img src="docs/screenshots/logo.png" alt="TruAni" width="150">
+</p>
 
-Seasonal anime manager for home media servers. TruAni bridges AniList and Sonarr to automatically discover, map, and import seasonal anime series.
+<h1 align="center">TruAni</h1>
+<p align="center">Seasonal Anime Manager for Sonarr</p>
 
-## What it does
+---
 
-- Fetches current and upcoming season anime from AniList (TV and ONA formats, Japanese origin, filtered by popularity)
-- Resolves TVDB IDs automatically via Sonarr lookups with intelligent title matching
-- Syncs matched series directly to Sonarr with configurable quality profiles, root folders, and tags
-- Tracks mapping status, episode counts, and Sonarr sync state per series
-- Supports manual TVDB ID overrides for titles that don't auto-match
-- Scheduled background refreshes (configurable: every 6h, 12h, daily, or weekly)
-- Ignore list for filtering out unwanted titles
-- In-app update system with weekly update checks
+TruAni keeps your Sonarr library up to date with each anime season. It pulls the latest seasonal anime from AniList, matches them to TVDB, and lets you import them into Sonarr with a single click. No more manually searching for new shows every season.
 
-## Requirements
+> **Note:** This is a personal project, built primarily as a learning experience. I run it on my own network and will fix issues as they come up, but I make no commitments to adding new features, functionality, or services. If it's useful to you too, great!
 
-- A running Sonarr instance (v3 or v4)
-- One of the following deployment targets:
-  - Docker and Docker Compose
-  - Proxmox VE (LXC container)
-  - Any Debian/Ubuntu system
+## Screenshots
 
-## Quick start
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard"><br>
+  <em>Dashboard — browse and manage seasonal anime</em>
+</p>
 
-### Option 1: Proxmox LXC (one-liner)
+<p align="center">
+  <img src="docs/screenshots/scan.png" alt="Scanning"><br>
+  <em>Scanning — real-time progress as anime are discovered and matched</em>
+</p>
 
-Run on your Proxmox VE host:
+<p align="center">
+  <img src="docs/screenshots/updates.png" alt="Updates"><br>
+  <em>Updates — check for and install updates from within the app</em>
+</p>
+
+## Features
+
+- **Automatic discovery** — Fetches current and upcoming anime seasons from AniList, filtered by format and popularity
+- **Smart matching** — Resolves TVDB IDs through Sonarr's lookup API with intelligent title matching across English, romaji, and synonym titles
+- **One-click imports** — Select the shows you want and push them straight to Sonarr with your preferred quality profile, root folder, and tags
+- **Manual overrides** — If a title doesn't auto-match, you can set the TVDB ID yourself
+- **Scheduled refreshes** — Runs in the background on your schedule (every 6h, 12h, daily, or weekly)
+- **Ignore list** — Hide titles you don't want cluttering your dashboard
+- **In-app updates** — Update to the latest version directly from the settings page
+- **Light and dark themes** — Follows your system preference or toggle manually
+
+## Getting Started
+
+TruAni runs anywhere — pick whichever method fits your setup.
+
+### Proxmox LXC (recommended for Proxmox users)
+
+Run this on your Proxmox host and follow the prompts:
 
 ```
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Rozzly/TruAni/main/scripts/install-lxc.sh)"
 ```
 
-This creates a Debian 13 LXC container, installs TruAni, and starts the service. You will be prompted for container settings (ID, hostname, resources) with sensible defaults.
+This creates a Debian 13 container, installs everything, and starts the service. You'll be prompted for container settings with sensible defaults.
 
-### Option 2: Any Debian/Ubuntu system
+### Any Debian/Ubuntu system
 
-Run inside an existing LXC container, VM, or bare metal server:
+Run inside an existing VM, container, or bare metal server:
 
 ```
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Rozzly/TruAni/main/scripts/install.sh)"
 ```
 
-This installs TruAni as a systemd service at `/opt/truani`.
-
-### Option 3: Docker
-
-1. Clone the repository:
+### Docker
 
 ```
 git clone https://github.com/Rozzly/TruAni.git
 cd TruAni
-```
-
-2. Copy the example environment file:
-
-```
 cp .env.example .env
-```
-
-3. Build and start:
-
-```
 docker compose up -d
 ```
 
-### After installation
+### First login
 
-1. Open `http://<your-host>:5656` in your browser.
-
-2. Log in with the default credentials (`truani` / `truani`). You will be prompted to change these on first login.
-
-3. Configure your Sonarr connection in the setup wizard.
-
-## Configuration
-
-### Environment variables
-
-All Sonarr settings can also be configured through the web UI. Environment variables serve as initial defaults.
-
-| Variable | Default | Description |
-|---|---|---|
-| `SONARR_URL` | `http://localhost:8989` | Sonarr instance URL |
-| `SONARR_API_KEY` | (none) | Sonarr API key |
-| `SONARR_ROOT_FOLDER` | `/tv/anime` | Root folder for imported series |
-| `SONARR_QUALITY_PROFILE` | `HD-1080p` | Quality profile name |
-| `SONARR_SERIES_TYPE` | `anime` | Series type (anime, standard, daily) |
-| `SONARR_MONITOR` | `all` | Monitor option (all, future, missing, etc.) |
-| `SONARR_SEASON_FOLDER` | `true` | Use season folders |
-| `SONARR_SEARCH_ON_ADD` | `false` | Search for episodes when adding |
-| `SONARR_TAGS` | (none) | Comma-separated tags to apply |
-| `FLASK_PORT` | `5656` | Web server port |
-
-### Reverse proxy
-
-TruAni is designed for internal network use only and should not be exposed directly to the internet. If you run it behind a reverse proxy, point it at `http://truani:5656` (or wherever the container is reachable).
+Open `http://<your-host>:5656` in your browser. The default credentials are `truani` / `truani` — you'll be asked to change these immediately. After that, connect your Sonarr instance and you're ready to go.
 
 ## Updating
 
-TruAni checks for updates once per week (Sunday at 2 AM local time). When a new version is available, a dismissable banner appears on the dashboard.
+TruAni checks for updates weekly. When a new version is available, a banner appears on the dashboard.
 
-**In-app update:** Go to Settings > Updates and click "Update Now". The app pulls the latest code, installs any new dependencies, and restarts itself.
+**From the web UI:** Go to Settings > Updates and click "Update Now". The app pulls the latest code, installs any new dependencies, and restarts itself. That's it.
 
-**LXC manual update:** From the Proxmox host or LXC console:
+**From the command line (LXC):**
 
 ```
 pct exec <CTID> -- update
 ```
 
-**Docker update:**
+**Docker:**
 
 ```
 git pull origin main
@@ -116,54 +95,26 @@ docker compose up --build -d
 
 ## How it works
 
-### Anime discovery
+Each scan pulls the current anime season from AniList, then attempts to match every title to a TVDB ID using Sonarr's search API. It tries English titles, romaji titles, and known synonyms, strips season suffixes for broader matches, and validates results by genre and year. Anything it can't match automatically gets flagged so you can resolve it manually.
 
-TruAni queries the AniList GraphQL API for TV and ONA anime in the current and next seasons, filtered to Japanese origin and excluding shorts (under 15 minutes). Results are sorted by popularity.
+When you import, TruAni pushes each matched series to Sonarr with your configured settings. Series already in Sonarr are detected and skipped.
 
-### TVDB ID mapping
-
-For each anime, TruAni resolves a TVDB ID through a multi-step process:
-
-1. Check the local database for a previously resolved or manually set mapping
-2. Search Sonarr's lookup API using the anime's English title, romaji title, and synonyms
-3. Validate results by checking genre (must be anime/Japanese), year range, and title similarity
-
-Season suffixes are stripped for better matching (e.g., "Bleach: Thousand-Year Blood War" searches for "Bleach"). Manual overrides always take priority.
-
-### Sonarr sync
-
-When you sync (manually or for the full season), TruAni pushes each matched series to Sonarr via its API with your configured quality profile, root folder, tags, and monitoring options. Series already in Sonarr are detected and skipped.
-
-## Data storage
-
-TruAni uses a single SQLite database stored at `data/truani.db`. All data (anime metadata, TVDB mappings, Sonarr status) can be re-fetched from external APIs at any time. The database is not critical and can be deleted to start fresh.
-
-User passwords are hashed with bcrypt. API keys are stored as plaintext in the database, which is only accessible from within the container or host filesystem.
+All data is stored in a single SQLite database. Everything can be re-fetched from AniList and Sonarr at any time, so there's nothing critical to back up.
 
 ## Security
 
-TruAni is designed for deployment on home networks and local infrastructure. It should not be exposed to the public internet.
+TruAni is built for home networks, not the public internet.
 
-- All routes require authentication (session-based with bcrypt password hashing)
-- Login rate limiting (10 failed attempts per IP triggers a 15-minute lockout)
-- Sessions expire after 7 days
-- Security headers: X-Content-Type-Options, X-Frame-Options, Referrer-Policy
-- Session cookies: HttpOnly, SameSite=Lax
-- Served by Waitress (production WSGI server), not Flask's development server
-- Container runs as a non-root user
-- First login forces a credential change from the default password
-- SSRF protection on Sonarr URL configuration (HTTP/HTTPS only)
+- All pages require login (session-based with bcrypt password hashing)
+- Login rate limiting with automatic lockout after failed attempts
+- Default credentials must be changed on first login
+- Runs as a non-root user inside the container
 
-## Tech stack
+## Requirements
 
-- **Backend**: Python 3.13, Flask, Waitress
-- **Database**: SQLite with WAL mode
-- **Frontend**: Vanilla HTML/CSS/JavaScript with Jinja2 templates
-- **Scheduling**: APScheduler
-- **Auth**: bcrypt
-- **Container**: Docker (python:3.13-slim)
-- **APIs**: AniList GraphQL, Sonarr v3/v4
+- A running Sonarr instance (v3 or v4)
+- Docker, a Debian/Ubuntu system, or Proxmox VE
 
 ## License
 
-MIT
+[MIT](LICENSE)

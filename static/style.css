@@ -1100,9 +1100,6 @@ input[type="checkbox"]:disabled {
     font-variant-numeric: tabular-nums;
     color: var(--color-text-muted);
 }
-.badge-ready { background: var(--color-success-bg); color: var(--color-success); border-color: var(--color-success-border); }
-.badge-blocked { background: var(--color-danger-bg); color: var(--color-danger); border-color: var(--color-danger-border); }
-.badge-ignored { background: var(--color-bg-elevated); color: var(--color-text-faint); }
 
 /* Ignored section */
 .ignored-section {
@@ -2672,6 +2669,9 @@ hr {
     background: var(--color-bg-inset);
     border-radius: var(--radius-lg);
     margin-top: 1rem;
+    max-height: 12rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 @media (max-width: 580px) {

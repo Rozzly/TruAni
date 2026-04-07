@@ -23,6 +23,11 @@ Sonarr supports import lists from popular sites, along with custom lists, howeve
 </p>
 
 <p align="center">
+  <img src="docs/screenshots/description.png" alt="Descriptions"><br>
+  <em>Descriptions — review the details of each title</em>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/scan.png" alt="Scanning"><br>
   <em>Scanning — real-time progress as titles are discovered and matched</em>
 </p>

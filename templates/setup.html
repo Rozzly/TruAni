@@ -116,6 +116,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/sonarr.js?v={{ app_version }}"></script>
 <script>
     // --- Step 1: Credentials ---
     async function submitSetup(e) {
@@ -155,84 +156,27 @@
 
     // --- Step 2: Sonarr ---
     var _sonarrTestPassed = false;
+    var _setupSonarrIds = { url: 'setup-sonarr-url', key: 'setup-sonarr-key', rootFolder: 'setup-sonarr-root', qualityProfile: 'setup-sonarr-quality', statusText: 'setup-sonarr-status', statusDot: 'setup-sonarr-dot' };
 
     async function setupTestSonarr() {
         clearFieldError('setup-sonarr-url');
         clearFieldError('setup-sonarr-key');
         var testBtn = document.querySelector('#setup-step2 .settings-section-footer .btn:not(.btn-primary)');
-        var url = document.getElementById('setup-sonarr-url').value.trim();
-        var key = document.getElementById('setup-sonarr-key').value.trim();
 
-        if (!url) { showFieldError('setup-sonarr-url', 'Sonarr URL is required'); return; }
-        if (!key) { showFieldError('setup-sonarr-key', 'API key is required'); return; }
-
-        try {
-            var resp = await apiCall('/api/settings/test-sonarr', {
-                method: 'POST',
-                body: JSON.stringify({ sonarr_url: url, sonarr_api_key: key })
-            });
-            if (resp) {
-                document.getElementById('setup-sonarr-status').textContent = resp.message;
-                document.getElementById('setup-sonarr-dot').className = 'dot ' + (resp.connected ? 'ok' : 'err');
-                if (resp.connected) {
-                    _sonarrTestPassed = true;
-                    document.getElementById('setup-sonarr-save').disabled = false;
-                    if (testBtn) btnSuccess(testBtn);
-                    setupLoadOptions();
-                } else {
-                    _sonarrTestPassed = false;
-                    document.getElementById('setup-sonarr-save').disabled = true;
-                    showFieldError('setup-sonarr-url', resp.message);
-                }
+        var ok = await testSonarrConnection(_setupSonarrIds, {
+            validateFirst: true,
+            onSuccess: function() {
+                _sonarrTestPassed = true;
+                document.getElementById('setup-sonarr-save').disabled = false;
+                if (testBtn) btnSuccess(testBtn);
+                loadSonarrOptions(_setupSonarrIds);
+            },
+            onFailure: function(resp) {
+                _sonarrTestPassed = false;
+                document.getElementById('setup-sonarr-save').disabled = true;
+                showFieldError('setup-sonarr-url', resp.message || 'Connection failed');
             }
-        } catch (e) {
-            showFieldError('setup-sonarr-url', 'Connection failed');
-        }
-    }
-
-    async function setupLoadOptions() {
-        var url = document.getElementById('setup-sonarr-url').value.trim();
-        var key = document.getElementById('setup-sonarr-key').value.trim();
-        if (!url || !key) return;
-
-        var resp = await apiCall('/api/settings/sonarr-options', {
-            method: 'POST',
-            body: JSON.stringify({ sonarr_url: url, sonarr_api_key: key })
         });
-        if (!resp || resp.status !== 'ok') return;
-
-        var rfSelect = document.getElementById('setup-sonarr-root');
-        var currentRf = rfSelect.value;
-        rfSelect.innerHTML = '';
-        if (resp.root_folders.length === 0) {
-            rfSelect.innerHTML = '<option value="" disabled selected>No root folders found</option>';
-        } else {
-            resp.root_folders.forEach(function(rf) {
-                var opt = document.createElement('option');
-                opt.value = rf.path;
-                var gb = Math.round(rf.freeSpace / 1073741824);
-                opt.textContent = rf.path + (gb > 0 ? ' (' + gb + ' GB free)' : '');
-                if (rf.path === currentRf) opt.selected = true;
-                rfSelect.appendChild(opt);
-            });
-            if (!currentRf && resp.root_folders.length > 0) rfSelect.selectedIndex = 0;
-        }
-
-        var qpSelect = document.getElementById('setup-sonarr-quality');
-        var currentQp = qpSelect.value;
-        qpSelect.innerHTML = '';
-        if (resp.quality_profiles.length === 0) {
-            qpSelect.innerHTML = '<option value="" disabled selected>No profiles found</option>';
-        } else {
-            resp.quality_profiles.forEach(function(qp) {
-                var opt = document.createElement('option');
-                opt.value = qp.name;
-                opt.textContent = qp.name;
-                if (qp.name === currentQp) opt.selected = true;
-                qpSelect.appendChild(opt);
-            });
-            if (!currentQp && resp.quality_profiles.length > 0) qpSelect.selectedIndex = 0;
-        }
     }
 
     async function setupSaveSonarr() {

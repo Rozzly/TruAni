@@ -278,7 +278,9 @@ def sync_all(anime_list):
                     results.append((anime["anilist_id"], "exists", "Already in Sonarr", None))
                     existing.add(tvdb_id)
                     continue
-                results.append((anime["anilist_id"], "error", str(body), None))
+                log.warning("Sonarr rejected add for anilist:%s (tvdb:%s): %s",
+                            anime["anilist_id"], tvdb_id, body)
+                results.append((anime["anilist_id"], "error", "Sonarr rejected the request", None))
                 continue
             resp.raise_for_status()
             # Fetch episode count from the newly added series

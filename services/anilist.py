@@ -57,7 +57,7 @@ def fetch_seasonal_anime(season, year):
                 format
                 episodes
                 duration
-                description(asHtml: false)
+                description(asHtml: true)
                 genres
                 averageScore
                 siteUrl
@@ -110,7 +110,7 @@ def fetch_seasonal_anime(season, year):
             "synonyms": m.get("synonyms") or [],
             "format": m["format"],
             "episodes": m["episodes"],
-            "description": (m.get("description") or "")[:500],
+            "description": m.get("description") or "",
             "genres": ",".join(m.get("genres") or []),
             "score": m.get("averageScore"),
             "anilist_url": m.get("siteUrl"),

@@ -11,3 +11,6 @@ CLAUDE.md
 
 # Local dev launcher — contains machine-specific config, not for the repo
 dev_run.py
+
+# Release build artifacts
+dist/

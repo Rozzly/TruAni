@@ -8,3 +8,6 @@ data/
 CLAUDE.md
 .idea/
 .vscode/
+
+# Local dev launcher — contains machine-specific config, not for the repo
+dev_run.py

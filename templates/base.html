@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>{% block title %}TruAni{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/fonts.css?v={{ app_version }}">
     <link rel="stylesheet" href="/static/style.css?v={{ app_version }}">
@@ -128,7 +129,12 @@
         }
 
         async function apiCall(url, opts = {}) {
-            opts.headers = { 'Content-Type': 'application/json', ...opts.headers };
+            const _csrf = document.querySelector('meta[name="csrf-token"]');
+            opts.headers = {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': _csrf ? _csrf.content : '',
+                ...opts.headers,
+            };
             const resp = await fetch(url, opts);
             if (resp.status === 401) { window.location = '/login'; return null; }
             return resp.json();

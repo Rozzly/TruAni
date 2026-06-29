@@ -1,10 +1,11 @@
 """TruAni — Seasonal anime manager. Flask application entry point."""
 
+import hmac
 import logging
+import secrets
 from datetime import timedelta
-from urllib.parse import urlparse
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session, redirect, url_for, flash
 
 import config
 import db
@@ -25,9 +26,19 @@ app.permanent_session_lifetime = timedelta(days=7)
 app.jinja_env.filters['display_title'] = display_title
 
 
+def _csrf_token():
+    """Per-session CSRF token (synchronizer-token pattern), created lazily and
+    stored in the signed session cookie."""
+    token = session.get("_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+
 @app.context_processor
 def _inject_globals():
-    return {"app_version": config.APP_VERSION}
+    return {"app_version": config.APP_VERSION, "csrf_token": _csrf_token()}
 
 
 @app.after_request
@@ -38,25 +49,25 @@ def _security_headers(response):
     return response
 
 
+_CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
+
 @app.before_request
-def _csrf_check():
-    """Verify Origin header on state-changing requests to prevent CSRF."""
-    if request.method not in ("POST", "PUT", "DELETE", "PATCH"):
+def _csrf_protect():
+    """Synchronizer-token CSRF check on state-changing requests. The token is
+    delivered to the page (meta tag / hidden form field) and echoed back via the
+    X-CSRFToken header (fetch) or the csrf_token field (HTML forms). Replaces the
+    previous Origin/Referer heuristic, which allowed requests that sent neither."""
+    if request.method in _CSRF_SAFE_METHODS:
         return
-    if not request.is_json and request.endpoint in ("auth.login", "auth.setup"):
-        return
-    origin = request.headers.get("Origin") or request.headers.get("Referer")
-    if not origin:
-        return
-    try:
-        parsed = urlparse(origin)
-        req_host = request.host.split(":")[0]
-        origin_host = parsed.hostname or ""
-        if origin_host != req_host:
-            log.warning("CSRF: Origin %s does not match host %s", origin, request.host)
-            return jsonify({"status": "error", "message": "Cross-origin request blocked"}), 403
-    except Exception:
-        return jsonify({"status": "error", "message": "Invalid origin"}), 403
+    expected = session.get("_csrf_token")
+    sent = request.headers.get("X-CSRFToken") or request.form.get("csrf_token", "")
+    if not expected or not sent or not hmac.compare_digest(expected, sent):
+        log.warning("CSRF validation failed for %s %s", request.method, request.path)
+        if request.is_json or request.path.startswith("/api/"):
+            return jsonify({"status": "error", "message": "CSRF validation failed"}), 403
+        flash("Your session expired. Please try again.", "error")
+        return redirect(url_for("auth.login"))
 
 
 @app.teardown_appcontext

@@ -8,6 +8,7 @@
     <div class="login-card">
         {{ brand_header("Seasonal Anime Manager for Sonarr") }}
         <form method="POST" action="/login">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" name="username" required autofocus autocomplete="username">

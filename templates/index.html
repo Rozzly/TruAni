@@ -57,26 +57,42 @@
         <button class="btn btn-sm" onclick="dismissUpdateBanner()" title="Dismiss">Dismiss</button>
     </div>
 </div>
-<div class="season-tabs" id="season-tabs">
-    {% set ns = namespace(prev_past=None) %}
-    {% for tab in tabs %}
-    {% if ns.prev_past is not none and ns.prev_past != tab.is_past %}
-    <span class="season-divider"></span>
-    {% endif %}
-    <a href="/?season={{ tab.season }}&year={{ tab.year }}"
-       class="season-tab {{ 'active' if tab.active }} {{ 'past' if tab.is_past }}"
-       {% if tab.active %}id="active-season-tab"{% endif %}>
-        {{ tab.label }}
-        {% if tab.is_current %}<span class="tab-badge current">now</span>
-        {% elif tab.is_next %}<span class="tab-badge upcoming">next</span>
-        {% endif %}
-    </a>
-    {% set ns.prev_past = tab.is_past %}
-    {% endfor %}
+<div class="season-bar">
+    <div class="year-tabs" id="year-tabs">
+        {% for yt in nav.years %}
+        <div class="year-tab-wrap" data-year="{{ yt.year }}">
+            <button type="button" class="year-tab {{ 'active' if yt.active }} {{ 'is-current' if yt.is_current }}"
+                    onclick="toggleYearMenu(event, {{ yt.year }})" aria-haspopup="true" aria-expanded="false"
+                    {% if yt.active %}id="active-year-tab"{% endif %}>
+                {% if yt.is_current %}<span class="cur-dot" title="Current season"></span>{% endif %}
+                <span class="year-tab-year">{{ yt.year }}</span>
+                <span class="year-tab-season">{{ yt.active_season_label }}</span>
+                <svg class="year-tab-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="season-menu" id="season-menu-{{ yt.year }}">
+                {% for s in yt.seasons %}
+                <a href="/?season={{ s.season }}&year={{ yt.year }}"
+                   class="season-menu-item {{ 'active' if s.active }} {{ 'is-current' if s.is_current }} {{ 'no-data' if not s.has_data }}"
+                   data-season="{{ s.season }}" data-year="{{ yt.year }}">
+                    {% if s.is_current %}<span class="cur-dot"></span>{% endif %}
+                    <span class="season-menu-name">{{ s.label }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <span class="season-bar-divider"></span>
+    <button class="btn btn-sm season-set-current" id="btn-set-current" onclick="setCurrentSeason(this)"
+            {% if nav.active_is_current %}disabled title="This is already the current season"{% else %}title="Mark this season as the current ('now') season"{% endif %}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Set as current
+    </button>
 </div>
 <script>
+    var CUR_SEASON = '{{ nav.cur_season }}', CUR_YEAR = {{ nav.cur_year }};
     (function() {
-        var el = document.getElementById('active-season-tab');
+        var el = document.getElementById('active-year-tab');
         if (el) el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'instant' });
         document.querySelectorAll('.relative-time').forEach(function(span) {
             span.textContent = formatTimeAgo(span.dataset.iso);
@@ -298,7 +314,9 @@
             <div class="refresh-stat"><span id="rs-mapped" class="text-success">-</span><span class="refresh-stat-label">Mapped</span></div>
             <div class="refresh-stat"><span id="rs-unmapped" class="text-warning">-</span><span class="refresh-stat-label">Unmapped</span></div>
         </div>
-        <div class="refresh-log" id="refresh-log"></div>
+        <div class="refresh-log-wrap">
+            <div class="refresh-log" id="refresh-log"></div>
+        </div>
         <div class="form-actions" id="refresh-actions">
             <button class="btn" id="refresh-cancel-btn" onclick="cancelRefresh()">Cancel</button>
         </div>
@@ -325,7 +343,9 @@
             <div class="refresh-stat"><span id="sync-skipped">0</span><span class="refresh-stat-label">Skipped</span></div>
             <div class="refresh-stat"><span id="sync-errors" class="text-danger">0</span><span class="refresh-stat-label">Errors</span></div>
         </div>
-        <div class="refresh-log" id="sync-log"></div>
+        <div class="refresh-log-wrap">
+            <div class="refresh-log" id="sync-log"></div>
+        </div>
         <div class="form-actions" id="sync-actions">
             <button class="btn" id="sync-cancel-btn" onclick="closeSyncModal()">Cancel</button>
         </div>

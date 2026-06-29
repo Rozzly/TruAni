@@ -14,18 +14,86 @@ SEASONS = {1: "WINTER", 2: "WINTER", 3: "WINTER",
 SEASON_ORDER = ["WINTER", "SPRING", "SUMMER", "FALL"]
 
 
+def _override_season():
+    """Parse the manually-pinned current season from config, or None if unset/invalid."""
+    import config
+    raw = (config.current_season_override() or "").strip()
+    if not raw:
+        return None
+    parts = raw.split()
+    if len(parts) != 2:
+        return None
+    season = parts[0].upper()
+    if season not in SEASON_ORDER:
+        return None
+    try:
+        return season, int(parts[1])
+    except ValueError:
+        return None
+
+
 def current_season():
+    """Current season/year. Honors a manual override set from the dashboard,
+    falling back to the system date when it's unset or invalid."""
+    override = _override_season()
+    if override:
+        return override
     now = datetime.now()
     return SEASONS[now.month], now.year
 
 
-def next_season():
-    """Return the next upcoming season and year."""
-    season, year = current_season()
-    idx = SEASON_ORDER.index(season)
-    if idx == 3:
+def advance_season(season, year):
+    """Return the season/year immediately following the given one."""
+    idx = SEASON_ORDER.index(season.upper())
+    if idx == len(SEASON_ORDER) - 1:
         return SEASON_ORDER[0], year + 1
     return SEASON_ORDER[idx + 1], year
+
+
+def next_season():
+    """Return the next upcoming season and year (relative to the current season)."""
+    return advance_season(*current_season())
+
+
+def count_upcoming_titles(season, year):
+    """Number of non-short TV/ONA Japanese titles AniList lists for a season,
+    counting only the first page. Used to gauge whether an upcoming season is
+    genuinely announced (dozens of titles) versus a few speculative early entries."""
+    query = """
+    query ($season: MediaSeason, $seasonYear: Int) {
+        Page(page: 1, perPage: 50) {
+            media(
+                season: $season,
+                seasonYear: $seasonYear,
+                type: ANIME,
+                format_in: [TV, ONA],
+                countryOfOrigin: "JP",
+                isAdult: false,
+                sort: POPULARITY_DESC
+            ) {
+                duration
+            }
+        }
+    }
+    """
+    data = _request(query, {"season": season.upper(), "seasonYear": year})
+    media = (data.get("data", {}).get("Page", {}) or {}).get("media") or []
+    return sum(1 for m in media if not (m.get("duration") and 0 < m["duration"] <= 15))
+
+
+def year_has_listings(year):
+    """True if AniList lists any TV/ONA anime for the given year (across all
+    seasons). Used to decide which year tabs to surface for scanning."""
+    query = """
+    query ($year: Int) {
+        Page(page: 1, perPage: 1) {
+            media(seasonYear: $year, type: ANIME, format_in: [TV, ONA],
+                  countryOfOrigin: "JP", isAdult: false) { id }
+        }
+    }
+    """
+    data = _request(query, {"year": year})
+    return bool((data.get("data", {}).get("Page", {}) or {}).get("media"))
 
 
 def fetch_seasonal_anime(season, year):

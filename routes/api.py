@@ -94,6 +94,40 @@ def api_season_data():
                      "season": season, "year": year})
 
 
+@api_bp.route("/season/set-current", methods=["POST"])
+@login_required
+def api_set_current_season():
+    """Pin a season as the current ('now') season. Persists an override that
+    cascades through current_season()/next_season(), so the tab bar re-labels
+    earlier seasons as past and surfaces the new 'next' tab automatically."""
+    from services.anilist import SEASON_ORDER, next_season
+
+    data = request.get_json(silent=True) or {}
+    season = (data.get("season") or "").upper()
+    year = data.get("year")
+
+    if season not in SEASON_ORDER:
+        return jsonify({"status": "error", "message": "Invalid season"}), 400
+    try:
+        year = int(year)
+    except (ValueError, TypeError):
+        return jsonify({"status": "error", "message": "Invalid year"}), 400
+
+    db.save_setting("current_season_override", f"{season} {year}")
+    config.clear_settings_cache()
+
+    # next_season() now reads the new override; the season dropdown always offers
+    # all four seasons, so the new "next" season is reachable immediately.
+    nxt_season, nxt_year = next_season()
+    return jsonify({
+        "status": "ok",
+        "message": f"{season.capitalize()} {year} is now the current season",
+        "season": season,
+        "year": year,
+        "next": {"season": nxt_season, "year": nxt_year},
+    })
+
+
 # --- Refresh ---
 
 @api_bp.route("/refresh", methods=["POST"])

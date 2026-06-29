@@ -104,3 +104,8 @@ def refresh_time():
 
 def refresh_day():
     return _get("refresh_day", None, "monday")
+
+def current_season_override():
+    """Manually-pinned current season as 'SEASON YEAR' (e.g. 'SUMMER 2026').
+    Empty string means fall back to the system date."""
+    return _get("current_season_override", None, "")

@@ -81,10 +81,19 @@ def _sonarr_lookup(anime):
         Handles compound words: 'Fan Club' == 'Fanclub'."""
         return re.sub(r'[^\w]', '', t).strip().lower()
 
+    def _compact_base(t):
+        """Compact comparison ignoring season/sequel suffixes.
+        TVDB uses one entry for all seasons ('The 100 Girlfriends...'), while our
+        titles carry the season marker ('... Season 3'), so a sequel only matches
+        exactly once both sides are stripped to their base."""
+        return _compact(strip_season_suffix(t))
+
     def _is_exact_match(result_title):
-        """Check if the result title exactly matches any known title for this anime."""
-        rt = _compact(result_title)
-        return any(rt == _compact(t) for t in titles if t)
+        """Check if the result title exactly matches any known title for this anime,
+        comparing both full and season-stripped forms so sequels match the base entry."""
+        rt, rt_base = _compact(result_title), _compact_base(result_title)
+        return any(rt == _compact(t) or rt_base == _compact_base(t)
+                   for t in titles if t)
 
     def _title_matches(search_title, result_title):
         """Check if the result title has meaningful word overlap with the search title."""
@@ -121,8 +130,14 @@ def _sonarr_lookup(anime):
     # Build search queries: try base titles first, then full titles.
     # TVDB entries use the original series name, so "Bleach" finds results
     # but "BLEACH: Thousand-Year Blood War - The Calamity" does not.
+    # Include synonyms: TVDB is English-primary, and some entries have a null
+    # title_english with the English name only in synonyms (e.g. romaji-only
+    # AniList entries), so searching by romaji alone would never find them.
     search_titles = []
-    for title in [anime.get("title_english"), anime.get("title_romaji")]:
+    search_sources = [anime.get("title_english")]
+    search_sources += (anime.get("synonyms") or [])
+    search_sources.append(anime.get("title_romaji"))
+    for title in search_sources:
         if not title:
             continue
         for base in _extract_base_titles(title):
@@ -130,7 +145,9 @@ def _sonarr_lookup(anime):
                 search_titles.append(base)
         if title not in search_titles:
             search_titles.append(title)
-    search_titles = search_titles[:4]  # limit API calls
+    # Safety bound only — the loop early-exits on the first anime+exact match
+    # (see scoring below), so a findable series resolves in 1-2 calls regardless.
+    search_titles = search_titles[:4]
 
     is_sequel = anime.get("is_sequel") or (anime.get("season_number") or 1) > 1
     best = None  # (score, tvdb_id, title) — higher score wins

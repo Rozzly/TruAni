@@ -3,7 +3,7 @@
 from flask import Blueprint, render_template, request, session
 
 import db
-from core import default_season, compute_stats, get_last_refresh, build_season_tabs
+from core import default_season, compute_stats, get_last_refresh, build_season_nav
 from routes.auth import login_required
 from services.sonarr import test_connection
 
@@ -21,7 +21,7 @@ def index():
     stats = compute_stats(anime_list, ignored_list)
 
     sonarr_ok, sonarr_msg = test_connection()
-    tabs = build_season_tabs(season, year)
+    nav = build_season_nav(season, year)
 
     return render_template(
         "index.html",
@@ -35,7 +35,7 @@ def index():
         last_refresh=get_last_refresh(),
         refresh_status="idle",
         user=session.get("user"),
-        tabs=tabs,
+        nav=nav,
     )
 
 

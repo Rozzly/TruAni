@@ -140,7 +140,7 @@
                     ${a.tvdbId ? '<div class="detail-tvdb"><span class="detail-info">TVDB: <a href="https://thetvdb.com/dereferrer/series/'+a.tvdbId+'" target="_blank" rel="noopener">'+a.tvdbId+'</a>'+(a.tvdbTitle?' — '+escapeHtml(a.tvdbTitle):'')+'</span></div>' : ''}
                 </div>
             </div>
-            ${a.description ? '<div class="detail-desc">'+sanitizeDesc(a.description)+'</div>' : ''}`;
+            ${a.description ? '<div class="detail-desc"><div class="detail-desc-scroll"><div class="detail-desc-inner">'+sanitizeDesc(a.description)+'</div></div></div>' : ''}`;
 
         const link = document.getElementById('detail-anilist-link');
         if (a.anilistUrl) { link.href = a.anilistUrl; link.style.display = ''; }
@@ -491,6 +491,82 @@
     }
 
     // Refresh with progress modal
+    async function setCurrentSeason(btn) {
+        if (btn) btn.disabled = true;
+        try {
+            const d = await apiCall('/api/season/set-current', {
+                method: 'POST',
+                body: JSON.stringify({ season: SEASON, year: YEAR }),
+            });
+            if (d && d.status === 'ok') {
+                // Reload at this season so the server re-renders tab badges
+                // (now/next/past) and adds the new "next" season tab.
+                window.location.href = '/?season=' + encodeURIComponent(SEASON) + '&year=' + encodeURIComponent(YEAR);
+                return;
+            }
+            showToast((d && d.message) || 'Could not set current season');
+            if (btn) btn.disabled = false;
+        } catch (e) {
+            showToast('Error: ' + e.message);
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    function toggleYearMenu(e, year) {
+        if (e) e.stopPropagation();
+        var menu = document.getElementById('season-menu-' + year);
+        if (!menu) return;
+        var willOpen = !menu.classList.contains('open');
+        closeAllYearMenus();
+        if (willOpen) {
+            var btn = menu.parentElement.querySelector('.year-tab');
+            var r = btn.getBoundingClientRect();
+            // Fixed-positioned so it floats above the year-tabs scroll clip.
+            menu.style.top = (r.bottom + 4) + 'px';
+            menu.classList.add('open');
+            var left = r.left;
+            var mw = menu.offsetWidth;
+            if (left + mw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - 8 - mw);
+            menu.style.left = left + 'px';
+            if (btn) btn.setAttribute('aria-expanded', 'true');
+        }
+    }
+
+    function closeAllYearMenus() {
+        document.querySelectorAll('.season-menu.open').forEach(function(m) { m.classList.remove('open'); });
+        document.querySelectorAll('.year-tab[aria-expanded="true"]').forEach(function(b) { b.setAttribute('aria-expanded', 'false'); });
+    }
+
+    // Fixed dropdowns would drift on scroll/resize — just close them.
+    window.addEventListener('scroll', closeAllYearMenus, true);
+    window.addEventListener('resize', closeAllYearMenus);
+
+    // Re-sync year tabs + dropdowns after an AJAX season switch. The current
+    // (green dot) markers are server-rendered and never move; only the blue
+    // 'active' highlight and the inline season label on the active year change.
+    function updateSeasonNav(season, year) {
+        year = parseInt(year, 10);
+        var label = season.charAt(0) + season.slice(1).toLowerCase();
+        document.querySelectorAll('.year-tab-wrap').forEach(function(wrap) {
+            var isActiveYear = parseInt(wrap.dataset.year, 10) === year;
+            var btn = wrap.querySelector('.year-tab');
+            if (btn) btn.classList.toggle('active', isActiveYear);
+            var lbl = wrap.querySelector('.year-tab-season');
+            if (lbl) lbl.textContent = isActiveYear ? label : '';
+        });
+        document.querySelectorAll('.season-menu-item').forEach(function(it) {
+            it.classList.toggle('active', parseInt(it.dataset.year, 10) === year && it.dataset.season === season);
+        });
+        var setBtn = document.getElementById('btn-set-current');
+        if (setBtn) {
+            var isCur = (season === CUR_SEASON && year === CUR_YEAR);
+            setBtn.disabled = isCur;
+            setBtn.title = isCur ? 'This is already the current season'
+                                 : "Mark this season as the current ('now') season";
+        }
+        closeAllYearMenus();
+    }
+
     function doRefresh(fresh) {
         const modal = document.getElementById('refresh-modal');
         const bar = document.getElementById('refresh-bar');
@@ -1157,44 +1233,37 @@
             document.title = 'TruAni \u2014 ' + data.season + ' ' + data.year;
         }
 
-        // Intercept tab clicks
-        document.getElementById('season-tabs').addEventListener('click', function(e) {
-            var tab = e.target.closest('.season-tab');
-            if (!tab) return;
-            e.preventDefault();
-
-            var href = tab.getAttribute('href');
-            var params = new URLSearchParams(href.split('?')[1] || '');
-            var season = params.get('season');
-            var year = params.get('year');
-            if (!season || !year) return;
-
-            // Update active tab immediately
-            document.querySelectorAll('.season-tab').forEach(function(t) { t.classList.remove('active'); });
-            tab.classList.add('active');
-
-            // Fetch data
+        // AJAX-navigate to a season/year, swapping table + nav state without a reload.
+        function navigateToSeason(season, year, push) {
             apiCall('/api/season-data?season=' + encodeURIComponent(season) + '&year=' + encodeURIComponent(year))
                 .then(function(data) {
                     if (!data) return;
                     applySeasonData(data);
-                    history.pushState({ season: season, year: year }, '', '/?season=' + season + '&year=' + year);
+                    updateSeasonNav(data.season, data.year);
+                    if (push !== false) {
+                        history.pushState({ season: data.season, year: data.year }, '',
+                            '/?season=' + data.season + '&year=' + data.year);
+                    }
                 });
+        }
+
+        // Season item (in any year's dropdown) → AJAX-switch to that season/year
+        document.getElementById('year-tabs').addEventListener('click', function(e) {
+            var item = e.target.closest('.season-menu-item');
+            if (!item) return;
+            e.preventDefault();
+            navigateToSeason(item.dataset.season, parseInt(item.dataset.year, 10));
         });
 
-        // Handle back/forward navigation
+        // Close any open year dropdown on an outside click
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.year-tab-wrap')) closeAllYearMenus();
+        });
+
+        // Back/forward navigation — every history entry is a same-document AJAX state
         window.addEventListener('popstate', function(e) {
             if (e.state && e.state.season && e.state.year) {
-                var season = e.state.season;
-                var year = e.state.year;
-                // Update active tab
-                document.querySelectorAll('.season-tab').forEach(function(t) {
-                    var href = t.getAttribute('href') || '';
-                    var p = new URLSearchParams(href.split('?')[1] || '');
-                    t.classList.toggle('active', p.get('season') === season && p.get('year') === String(year));
-                });
-                apiCall('/api/season-data?season=' + encodeURIComponent(season) + '&year=' + encodeURIComponent(year))
-                    .then(function(data) { if (data) applySeasonData(data); });
+                navigateToSeason(e.state.season, e.state.year, false);
             }
         });
 

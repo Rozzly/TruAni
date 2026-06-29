@@ -79,39 +79,78 @@ def build_entry(anime, tvdb_id, tvdb_title, source, sonarr_tvdb_ids):
     }
 
 
-def build_season_tabs(active_season, active_year):
-    """Build the list of season tabs for the UI."""
+def _anilist_year_horizon(cur_year):
+    """Years AniList currently lists anime for, from the current year forward.
+    Probed once and cached (~6h; AniList's announced range moves slowly) so the
+    nav can offer future years for scanning before anything is scanned, while
+    hiding years AniList hasn't announced yet. Falls back to just the current
+    year if AniList is unreachable."""
+    cached = db.get_cache("anilist_year_horizon")
+    if cached is not None:
+        return set(cached)
+    from services.anilist import year_has_listings
+    years = {cur_year}
+    try:
+        y = cur_year
+        while y - cur_year < 5:  # safety cap on look-ahead
+            y += 1
+            if not year_has_listings(y):
+                break
+            years.add(y)
+        db.set_cache("anilist_year_horizon", sorted(years), ttl_seconds=21600)
+    except Exception:
+        log.warning("AniList year-horizon probe failed; nav limited to known years")
+    return years
+
+
+def build_season_nav(active_season, active_year):
+    """Build the year-tab + season-dropdown navigation model for the UI.
+
+    Year tabs span every year AniList has a filter for (scanned years in the DB,
+    the current/next year, and AniList's announced future horizon) — so an
+    unscanned-but-announced year like 2027 appears and can be navigated to and
+    scanned, while a year AniList hasn't added yet (2028) stays hidden. Each
+    shown year offers all four seasons; seasons with no data are navigable but
+    empty."""
     from services.anilist import SEASON_ORDER
     cur_season, cur_year = current_season()
     nxt_season, nxt_year = next_season()
 
-    db_seasons = db.get_all_seasons()
+    db_seasons = set(db.get_all_seasons())
 
-    tab_set = set(db_seasons)
-    tab_set.add((cur_season, cur_year))
-    tab_set.add((nxt_season, nxt_year))
+    year_set = {yr for _, yr in db_seasons}
+    year_set.update({cur_year, nxt_year, active_year})
+    year_set.update(_anilist_year_horizon(cur_year))
 
-    season_rank = {s: i for i, s in enumerate(SEASON_ORDER)}
-
-    def sort_key(t):
-        return (t[1], season_rank.get(t[0], 0))
-
-    cur_rank = sort_key((cur_season, cur_year))
-
-    tabs = sorted(tab_set, key=sort_key)
-
-    return [
-        {
-            "season": s,
+    years = []
+    for y in sorted(year_set):
+        seasons = [
+            {
+                "season": s,
+                "label": s.capitalize(),
+                "active": s == active_season and y == active_year,
+                "is_current": s == cur_season and y == cur_year,
+                "has_data": (s, y) in db_seasons,
+            }
+            for s in SEASON_ORDER
+        ]
+        years.append({
             "year": y,
-            "label": f"{s.capitalize()} {y}",
-            "active": s == active_season and y == active_year,
-            "is_current": s == cur_season and y == cur_year,
-            "is_next": s == nxt_season and y == nxt_year,
-            "is_past": sort_key((s, y)) < cur_rank,
-        }
-        for s, y in tabs
-    ]
+            "active": y == active_year,
+            "is_current": y == cur_year,
+            # season label shown inline on the active year tab
+            "active_season_label": active_season.capitalize() if y == active_year else "",
+            "seasons": seasons,
+        })
+
+    return {
+        "years": years,
+        "active_season": active_season,
+        "active_year": active_year,
+        "active_is_current": active_season == cur_season and active_year == cur_year,
+        # exposed to JS so the set-current button can recompute its disabled state
+        "cur_season": cur_season, "cur_year": cur_year,
+    }
 
 
 # --- SSE helpers ---

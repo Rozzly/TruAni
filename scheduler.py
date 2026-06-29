@@ -4,18 +4,36 @@ import logging
 
 import config
 from core import refresh_data
-from services.anilist import next_season
+from services.anilist import current_season, advance_season, count_upcoming_titles
 
 log = logging.getLogger("truani")
 
 _scheduler = None
 
+# An upcoming season is auto-created once AniList lists at least this many titles
+# — enough to distinguish a genuinely-announced season from the handful of
+# speculative entries AniList shows a year or more in advance.
+UPCOMING_MIN_TITLES = 10
+# Safety cap on how many seasons past the current one to look ahead.
+UPCOMING_LOOKAHEAD = 4
+
 
 def scheduled_refresh():
-    """Refresh both current and next season on schedule."""
-    refresh_data()
-    nxt_s, nxt_y = next_season()
-    refresh_data(nxt_s, nxt_y)
+    """Refresh the current season plus every upcoming season AniList already lists.
+    Walks forward from the current season so newly-announced seasons (e.g. Fall
+    appearing while it's still Spring) get created automatically, stopping at the
+    first season AniList hasn't meaningfully populated yet."""
+    season, year = current_season()
+    refresh_data(season, year)
+
+    for step in range(1, UPCOMING_LOOKAHEAD + 1):
+        season, year = advance_season(season, year)
+        # Always refresh the immediate next season; for seasons further out, only
+        # create them once AniList has genuinely populated the listing.
+        if step == 1 or count_upcoming_titles(season, year) >= UPCOMING_MIN_TITLES:
+            refresh_data(season, year)
+        else:
+            break
 
 
 def _build_trigger():

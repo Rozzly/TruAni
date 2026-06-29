@@ -48,6 +48,7 @@
     /* Borders */
     --color-border: #c5c5ce;
     --color-border-subtle: #e4e4e7;
+    --color-scrollbar: #b0b0be;
 
     /* Primary */
     --color-primary: #446699;
@@ -109,6 +110,7 @@
 
     --color-border: #3e3e5e;
     --color-border-subtle: #2e2e4a;
+    --color-scrollbar: #6a6a88;
 
     --color-primary: #5a9cb8;
     --color-primary-hover: #4a8ca8;
@@ -413,7 +415,7 @@ a:hover { color: var(--color-primary-hover); }
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem 1rem;
-    padding: 0.5rem 0.75rem;
+    padding: 0.5rem;
     background: var(--color-bg-raised);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
@@ -442,7 +444,7 @@ a:hover { color: var(--color-primary-hover); }
     border-bottom-right-radius: 0;
     margin-bottom: 0;
     border-bottom-color: transparent;
-    box-shadow: none;
+    box-shadow: var(--shadow);
 }
 
 .action-bar-sticky.stuck + .table-wrapper {
@@ -785,25 +787,107 @@ a:hover { color: var(--color-primary-hover); }
    Season Tabs
    ================================================================ */
 
-.season-tabs {
+/* Season navigation: the bar is a card holding the year tabs (which scroll)
+   plus a right-aligned 'Set as current' button, separated by a divider. */
+.season-bar {
     display: flex;
-    gap: 0.25rem;
+    align-items: center;
+    gap: 0.5rem;
     margin-bottom: 0.75rem;
-    overflow-x: auto;
-    overflow-y: hidden;
     background: var(--color-bg-raised);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: 0.375rem;
     box-shadow: var(--shadow);
+}
+
+/* 'Set as current' sits at the right of the bar, after a divider, inside the card */
+.season-bar-divider {
+    width: 1px;
+    align-self: stretch;
+    margin: 0.125rem 0.25rem;
+    background: var(--color-border);
+    flex-shrink: 0;
+}
+
+.season-set-current { flex-shrink: 0; white-space: nowrap; }
+
+.year-tabs {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+    overflow-y: visible;
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
 
-.season-tabs::-webkit-scrollbar { display: none; }
+.year-tabs::-webkit-scrollbar { display: none; }
 
-.season-tab {
+.year-tab-wrap { position: relative; flex-shrink: 0; }
+
+.year-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
     padding: 0.4rem 0.75rem;
+    font-size: var(--text-base);
+    font-weight: 500;
+    color: var(--color-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.year-tab:hover { color: var(--color-text); background: var(--color-bg-hover); }
+
+/* Active (selected) year — blue */
+.year-tab.active { color: #fff; background: var(--color-primary); font-weight: 600; }
+.year-tab.active:hover { background: var(--color-primary-hover); }
+
+.year-tab-season { font-weight: 500; opacity: 0.85; }
+.year-tab-season:empty { display: none; }
+.year-tab-caret { flex-shrink: 0; opacity: 0.7; transition: transform var(--transition-fast); }
+.year-tab[aria-expanded="true"] .year-tab-caret { transform: rotate(180deg); }
+
+/* Current season/year — indicated by a colored dot, not a pill */
+.cur-dot {
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--color-success);
+    box-shadow: 0 0 0 2px var(--color-success-bg);
+}
+.year-tab.active .cur-dot { box-shadow: 0 0 0 2px rgba(255,255,255,0.25); }
+
+/* Per-year season dropdown — fixed so it floats free of the year-tabs'
+   horizontal-scroll clipping (position set in JS on open). */
+.season-menu {
+    position: fixed;
+    z-index: 60;
+    display: none;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 8rem;
+    padding: 0.375rem;
+    background: var(--color-bg-raised);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg, var(--shadow));
+}
+
+.season-menu.open { display: flex; }
+
+.season-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0.7rem;
     font-size: var(--text-base);
     font-weight: 500;
     color: var(--color-text-muted);
@@ -811,66 +895,21 @@ a:hover { color: var(--color-primary-hover); }
     border-radius: var(--radius);
     white-space: nowrap;
     transition: all var(--transition-fast);
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex-shrink: 0;
 }
 
-.season-tab:hover {
-    color: var(--color-text);
-    background: var(--color-bg-hover);
-    text-decoration: none;
-}
+.season-menu-item:hover { color: var(--color-text); background: var(--color-bg-hover); text-decoration: none; }
 
-.season-tab.active {
-    color: #fff;
-    background: var(--color-primary);
-    font-weight: 600;
-}
+/* Active (selected) season — blue */
+.season-menu-item.active { color: #fff; background: var(--color-primary); font-weight: 600; }
+.season-menu-item.active:hover { background: var(--color-primary-hover); color: #fff; }
 
-.season-tab.active:hover {
-    background: var(--color-primary-hover);
-    color: #fff;
-}
+/* Current season — colored text (plus the dot) */
+.season-menu-item.is-current { color: var(--color-success); }
+.season-menu-item.is-current.active { color: #fff; }
 
-.season-tab.past {
-    color: var(--color-text-faint);
-    font-size: var(--text-sm);
-}
-
-.season-tab.past:hover { color: var(--color-text-muted); }
-
-.season-divider {
-    display: flex;
-    align-items: center;
-    padding: 0 0.125rem;
-    flex-shrink: 0;
-    user-select: none;
-}
-
-.season-divider::after {
-    content: '';
-    display: block;
-    width: 1px;
-    height: 1.25rem;
-    background: var(--color-border-subtle);
-}
-
-.tab-badge {
-    font-size: var(--text-xs);
-    padding: 0.1rem 0.4rem;
-    border-radius: var(--radius-pill);
-    text-transform: uppercase;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-}
-
-.tab-badge.current { background: var(--color-success-bg); color: var(--color-success); border: 1px solid var(--color-success-border); }
-.tab-badge.upcoming { background: var(--color-info-bg); color: var(--color-info); border: 1px solid var(--color-info-border); }
-
-.season-tab.active .tab-badge.current { background: rgba(255,255,255,0.2); color: #fff; border-color: rgba(255,255,255,0.3); }
-.season-tab.active .tab-badge.upcoming { background: rgba(255,255,255,0.2); color: #fff; border-color: rgba(255,255,255,0.3); }
+/* Seasons with no scanned data yet — navigable, but de-emphasized */
+.season-menu-item.no-data .season-menu-name { color: var(--color-text-faint); }
+.season-menu-item.no-data.active .season-menu-name { color: rgba(255,255,255,0.85); }
 
 /* ================================================================
    Color Utilities
@@ -2432,22 +2471,29 @@ hr {
     font-weight: 500;
 }
 
-.refresh-log {
+.refresh-log-wrap {
     flex: 1;
-    min-height: 0;
-    overflow-y: auto;
+    min-height: 3rem;
     border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius);
     background: var(--color-bg-inset);
+    padding: 0.5rem;
+    overflow: hidden;
+    display: flex;
+}
+
+.refresh-log {
+    flex: 1;
+    overflow-y: auto;
     font-size: var(--text-sm);
-    scrollbar-width: thin;
+    padding-right: 0.35rem;
 }
 
 .refresh-log-item {
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    padding: 0.2rem 0.5rem;
+    padding: 0.2rem 0.75rem 0.2rem 0.5rem;
     border-bottom: 1px solid var(--color-border-subtle);
     min-width: 0;
     color: var(--color-text-secondary);
@@ -2573,6 +2619,8 @@ hr {
     border-color: var(--color-primary);
     color: var(--color-primary);
     background: var(--color-primary-light);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow);
 }
 
 .detail-nav-btn:disabled {
@@ -2661,17 +2709,54 @@ hr {
     margin-top: 0.25rem;
 }
 
+/* Description: outer container — visual styling + fade overlays */
 .detail-desc {
-    font-size: var(--text-base);
-    color: var(--color-text-secondary);
-    line-height: 1.6;
-    padding: 1rem;
     background: var(--color-bg-inset);
     border-radius: var(--radius-lg);
     margin-top: 1rem;
     max-height: 12rem;
+    padding: 0.5rem;
+    overflow: hidden;
+    display: flex;
+    position: relative;
+}
+
+/* Fade overlays — text only, not covering scrollbar */
+.detail-desc::before,
+.detail-desc::after {
+    content: '';
+    position: absolute;
+    left: 0.5rem;
+    right: calc(0.5rem + 8px);
+    height: 1.25rem;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.detail-desc::before {
+    top: 0.5rem;
+    background: linear-gradient(to bottom, var(--color-bg-inset) 20%, transparent);
+}
+
+.detail-desc::after {
+    bottom: 0.5rem;
+    background: linear-gradient(to top, var(--color-bg-inset) 20%, transparent);
+}
+
+/* Description: scroll container */
+.detail-desc-scroll {
+    flex: 1;
+    min-width: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+}
+
+/* Description: text content */
+.detail-desc-inner {
+    font-size: var(--text-base);
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+    padding: 0.75rem;
 }
 
 @media (max-width: 580px) {
@@ -2837,6 +2922,34 @@ html {
 ::-webkit-scrollbar-track { background: var(--color-bg); }
 ::-webkit-scrollbar-thumb { background: var(--color-text-faint); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+
+/* Inset scrollable areas (description, scan log) */
+.refresh-log,
+.detail-desc-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar) transparent;
+}
+
+.refresh-log::-webkit-scrollbar,
+.detail-desc-scroll::-webkit-scrollbar {
+    width: 8px;
+}
+
+.refresh-log::-webkit-scrollbar-track,
+.detail-desc-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.refresh-log::-webkit-scrollbar-thumb,
+.detail-desc-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--color-scrollbar);
+    border-radius: 4px;
+}
+
+.refresh-log::-webkit-scrollbar-button,
+.detail-desc-scroll::-webkit-scrollbar-button {
+    background-color: var(--color-scrollbar);
+}
 
 /* ================================================================
    Focus States

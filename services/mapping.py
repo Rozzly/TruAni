@@ -1,13 +1,14 @@
 """
 ID mapping: AniList ID → TVDB ID
 
-Lookup chain (in order):
-1. DB cache (previously resolved mapping)
-2. Sonarr search (queries TVDB via Sonarr)
-3. Manual entry (user sets TVDB ID via UI)
+Resolution order:
+1. Manual override (user-set TVDB ID — never overwritten)
+2. DB cache (previously resolved mapping)
+3. Sonarr search (queries TVDB via Sonarr), results graded by _grade()
 """
 
 import re
+import difflib
 
 import db
 from services.sonarr import search_series
@@ -55,145 +56,177 @@ def rescan_tvdb_id(anime):
 
 # --- Sonarr lookup (searches TVDB via Sonarr) ---
 
-def sonarr_lookup(anime):
-    """Search Sonarr by title to find TVDB ID. Returns (tvdb_id, 'sonarr', title) or (None, None, None).
-    Validates results: must be anime, year within range, and title must have meaningful overlap.
-    Searches with base title (stripped of season/sequel suffixes) for better TVDB matches."""
-    titles = []
-    if anime.get("title_english"):
-        titles.append(anime["title_english"])
-    for syn in (anime.get("synonyms") or []):
-        if syn and syn not in titles:
-            titles.append(syn)
-    if anime.get("title_romaji"):
-        titles.append(anime["title_romaji"])
+# Tokens that carry no identifying weight (Japanese particles, English articles),
+# so a title sharing only these isn't a meaningful match.
+_STOPWORDS = {"no", "na", "ni", "wa", "wo", "to", "ga", "the", "a", "of", "and"}
 
-    anime_year = anime.get("season_year")
+# Minimum grade for a result to be accepted as a match. Calibrated against the
+# live catalogue: true anime matches grade ~1.3+ (title sim + the 0.5 anime
+# bonus), while coincidental hits stay well below.
+_MATCH_THRESHOLD = 1.10
 
-    def _normalize(t):
-        """Strip season/part suffixes, punctuation, and lowercase for word comparison."""
-        t = strip_season_suffix(t).lower()
-        t = re.sub(r'[^\w\s]', ' ', t)
-        return set(t.split())
+_YEAR_RE = re.compile(r"\((\d{4})\)")
 
-    def _compact(t):
-        """Lowercase, strip punctuation and spaces for exact comparison.
-        Handles compound words: 'Fan Club' == 'Fanclub'."""
-        return re.sub(r'[^\w]', '', t).strip().lower()
 
-    def _compact_base(t):
-        """Compact comparison ignoring season/sequel suffixes.
-        TVDB uses one entry for all seasons ('The 100 Girlfriends...'), while our
-        titles carry the season marker ('... Season 3'), so a sequel only matches
-        exactly once both sides are stripped to their base."""
-        return _compact(strip_season_suffix(t))
+def _tokens(title):
+    """Lowercased word set with season suffix and punctuation removed."""
+    t = re.sub(r"[^\w\s]", " ", strip_season_suffix(title).lower())
+    return [w for w in t.split() if w]
 
-    def _is_exact_match(result_title):
-        """Check if the result title exactly matches any known title for this anime,
-        comparing both full and season-stripped forms so sequels match the base entry."""
-        rt, rt_base = _compact(result_title), _compact_base(result_title)
-        return any(rt == _compact(t) or rt_base == _compact_base(t)
-                   for t in titles if t)
 
-    def _title_matches(search_title, result_title):
-        """Check if the result title has meaningful word overlap with the search title."""
-        # First check compact match (handles compound words like Fanclub vs Fan Club)
-        if _compact(search_title) == _compact(result_title):
-            return True
-        search_words = _normalize(search_title)
-        result_words = _normalize(result_title)
-        if not search_words or not result_words:
-            return False
-        overlap = len(search_words & result_words)
-        min_len = min(len(search_words), len(result_words))
-        # For short titles (1-2 words), require all words to match
-        if min_len <= 2:
-            return overlap >= min_len
-        # For longer titles, require at least 50% overlap
-        return overlap >= min_len * 0.5
+def _compact(title):
+    """Lowercase with all non-word chars removed — 'Fan Club' == 'Fanclub'."""
+    return re.sub(r"[^\w]", "", title).strip().lower()
 
-    def _extract_base_titles(title):
-        """Extract search variations: strip season suffix, strip subtitle after colon."""
+
+def _compact_base(title):
+    """_compact ignoring season/sequel suffixes, so a sequel matches the base
+    TVDB entry ('... Season 3' == 'The 100 Girlfriends...')."""
+    return _compact(strip_season_suffix(title))
+
+
+def _tokens_match(a, b):
+    """Two tokens match if equal, or one is a >=4-char prefix of the other
+    ('dodge'/'dodgeball', 'danpei'/'danpeii') — bridges transliteration drift and
+    English/romaji word-boundary differences that exact comparison misses."""
+    return a == b or (len(a) >= 4 and len(b) >= 4 and (a.startswith(b) or b.startswith(a)))
+
+
+def _title_similarity(known_titles, result):
+    """Best similarity in [0, 1] between any known AniList title and any title the
+    TVDB result is known by (primary + alternate titles). 1.0 for an exact match
+    (ignoring case/punctuation/season suffix); otherwise the stronger of a
+    prefix-aware token-set ratio and a character-level ratio. The token ratio is
+    discounted when only stopwords are shared."""
+    candidates = [result.get("title") or ""] + list(result.get("alternateTitles") or [])
+    best = 0.0
+    for known in known_titles:
+        kc, kb, kt = _compact(known), _compact_base(known), _tokens(known)
+        for cand in candidates:
+            if not cand:
+                continue
+            if _compact(cand) == kc or _compact_base(cand) == kb:
+                return 1.0
+            rt = _tokens(cand)
+            tset = 0.0
+            if kt and rt:
+                mk = sum(1 for x in kt if any(_tokens_match(x, y) for y in rt))
+                mr = sum(1 for y in rt if any(_tokens_match(x, y) for x in kt))
+                distinct = sum(1 for x in kt if x not in _STOPWORDS
+                               and any(_tokens_match(x, y) for y in rt))
+                tset = min(min(mk, mr) / (min(len(kt), len(rt)) or 1), 1.0)
+                if distinct == 0:
+                    tset = min(tset, 0.3)
+            char = difflib.SequenceMatcher(None, kc, _compact(cand)).ratio()
+            best = max(best, tset, char)
+    return min(best, 1.0)
+
+
+def _grade(anime, result, known_titles):
+    """Continuous match grade for a TVDB lookup result — higher is better.
+
+    Additive signals: title similarity (0-1); a strong anime bonus (every source
+    title is anime, so this outweighs an exact title on a same-named live-action
+    entry); a smaller Japanese-origin bonus; a nudge for TVDB's top-ranked hits;
+    and a release-year term that disambiguates same-named remakes, which TVDB
+    suffixes '(YEAR)'. Non-sequels matched to an ended series airing well outside
+    the anime's year are penalised (sequels legitimately reuse an old base entry)."""
+    grade = _title_similarity(known_titles, result)
+    if result.get("isAnime"):
+        grade += 0.50
+    if result.get("isJapanese"):
+        grade += 0.10
+    rank = result.get("rank", 99)
+    grade += 0.12 if rank == 0 else (0.05 if rank == 1 else 0.0)
+
+    year = anime.get("season_year")
+    m = _YEAR_RE.search(result.get("title") or "")
+    if m and year:
+        result_year = int(m.group(1))
+        if result_year == year:
+            grade += 0.20
+        elif abs(result_year - year) > 1:
+            grade -= 0.30
+
+    is_sequel = anime.get("is_sequel") or (anime.get("season_number") or 1) > 1
+    if not is_sequel and (result.get("status") or "").lower() == "ended":
+        last_aired = result.get("lastAired") or ""
+        if last_aired and year:
+            try:
+                if abs(year - int(last_aired[:4])) > 1:
+                    grade -= 0.50
+            except (ValueError, IndexError):
+                pass
+    return grade
+
+
+def _search_terms(anime):
+    """Ordered list of titles to query Sonarr with: base forms (season suffix
+    stripped, subtitle before a colon) before full titles, drawn from the English
+    title, synonyms, romaji, then the native (Japanese) title. TVDB indexes the
+    original series name, so base forms find sequels the full season-marked title
+    would miss; synonyms cover romaji-only AniList entries whose English name
+    lives only in a synonym; and the native title resolves entries TVDB has
+    indexed under their Japanese name where the romaji search ranks poorly."""
+    def base_titles(title):
         bases = []
-        if not title:
-            return bases
         stripped = strip_season_suffix(title)
         if stripped and stripped != title:
             bases.append(stripped)
-        # Try part before colon for subtitled sequels (e.g., "BLEACH: Thousand-Year Blood War")
-        if ':' in title:
-            before_colon = title.split(':')[0].strip()
-            if before_colon and before_colon not in bases:
-                bases.append(before_colon)
+        if ":" in title:
+            before = title.split(":")[0].strip()
+            if before and before not in bases:
+                bases.append(before)
         return bases
 
-    # Build search queries: try base titles first, then full titles.
-    # TVDB entries use the original series name, so "Bleach" finds results
-    # but "BLEACH: Thousand-Year Blood War - The Calamity" does not.
-    # Include synonyms: TVDB is English-primary, and some entries have a null
-    # title_english with the English name only in synonyms (e.g. romaji-only
-    # AniList entries), so searching by romaji alone would never find them.
-    search_titles = []
-    search_sources = [anime.get("title_english")]
-    search_sources += (anime.get("synonyms") or [])
-    search_sources.append(anime.get("title_romaji"))
-    for title in search_sources:
+    terms = []
+    sources = ([anime.get("title_english")] + (anime.get("synonyms") or [])
+               + [anime.get("title_romaji"), anime.get("title_native")])
+    for title in sources:
         if not title:
             continue
-        for base in _extract_base_titles(title):
-            if base not in search_titles:
-                search_titles.append(base)
-        if title not in search_titles:
-            search_titles.append(title)
-    # Safety bound only — the loop early-exits on the first anime+exact match
-    # (see scoring below), so a findable series resolves in 1-2 calls regardless.
-    search_titles = search_titles[:4]
+        for base in base_titles(title):
+            if base not in terms:
+                terms.append(base)
+        if title not in terms:
+            terms.append(title)
+    return terms[:5]
 
-    is_sequel = anime.get("is_sequel") or (anime.get("season_number") or 1) > 1
-    best = None  # (score, tvdb_id, title) — higher score wins
-    seen_tvdb = set()
 
-    for search_title in search_titles:
-        results = search_series(search_title)
-        for r in results:
-            tvdb_id = r.get("tvdbId")
-            if not tvdb_id or tvdb_id in seen_tvdb:
+def sonarr_lookup(anime):
+    """Search Sonarr (which queries TVDB) and return the best-matching series as
+    (tvdb_id, 'sonarr', title), or (None, None, None) if nothing grades highly
+    enough. Every candidate is scored by _grade(); the highest-graded result at or
+    above _MATCH_THRESHOLD wins. Replaces the old binary word-overlap filter,
+    which rejected correct matches whose TVDB title is an English translation
+    (sharing few words with the romaji) and mis-ranked same-named remakes."""
+    known_titles = []
+    if anime.get("title_english"):
+        known_titles.append(anime["title_english"])
+    for syn in (anime.get("synonyms") or []):
+        if syn and syn not in known_titles:
+            known_titles.append(syn)
+    if anime.get("title_romaji"):
+        known_titles.append(anime["title_romaji"])
+
+    best = None       # (grade, tvdb_id, title)
+    seen = {}         # tvdb_id -> best grade so far (dedupe across search terms)
+    for term in _search_terms(anime):
+        for result in search_series(term):
+            # The source catalogue is anime-only, so ignore entries that are
+            # neither animation nor Japanese (e.g. a same-named Western show).
+            if not (result.get("isAnime") or result.get("isJapanese")):
                 continue
-            seen_tvdb.add(tvdb_id)
-
-            result_title = r.get("title") or ""
-            exact = _is_exact_match(result_title)
-            is_anime = r.get("isAnime") or r.get("isJapanese")
-
-            # Must be anime/Japanese OR exact title match
-            if not exact and not is_anime:
+            tvdb_id = result.get("tvdbId")
+            if not tvdb_id:
                 continue
+            grade = _grade(anime, result, known_titles)
+            if tvdb_id in seen and seen[tvdb_id] >= grade:
+                continue
+            seen[tvdb_id] = grade
+            if best is None or grade > best[0]:
+                best = (grade, tvdb_id, result.get("title"))
 
-            # For new series (not sequels), reject ended series with stale lastAired
-            status = (r.get("status") or "").lower()
-            if not is_sequel and status == "ended":
-                last_aired = r.get("lastAired") or ""
-                if last_aired and anime_year:
-                    try:
-                        aired_year = int(last_aired[:4])
-                        if abs(anime_year - aired_year) > 1:
-                            continue
-                    except (ValueError, IndexError):
-                        pass
-
-            # Title similarity check (exact matches pass automatically)
-            if not exact:
-                matched = any(_title_matches(t, result_title) for t in titles)
-                if not matched:
-                    continue
-
-            # Score: prefer anime > non-anime, exact > fuzzy
-            score = (2 if r.get("isAnime") else 0) + (1 if exact else 0)
-            if best is None or score > best[0]:
-                best = (score, tvdb_id, r.get("title"))
-                if score >= 3:  # anime + exact — can't do better
-                    return tvdb_id, "sonarr", r.get("title")
-
-    if best:
+    if best and best[0] >= _MATCH_THRESHOLD:
         return best[1], "sonarr", best[2]
     return None, None, None

@@ -98,12 +98,16 @@ def search_series(title):
         results = resp.json()
         seen = set()
         out = []
-        for s in results:
+        # rank = position in Sonarr's (TVDB-ranked) results, before de-duping —
+        # the grader uses it as a tie-breaker, trusting TVDB's own ordering.
+        for rank, s in enumerate(results):
             tvdb_id = s.get("tvdbId")
             if not tvdb_id or tvdb_id in seen:
                 continue
             seen.add(tvdb_id)
-            out.append(_parse_series(s))
+            parsed = _parse_series(s)
+            parsed["rank"] = rank
+            out.append(parsed)
             if len(out) >= 8:
                 break
         return out
@@ -128,6 +132,9 @@ def _parse_series(s):
         "isAnime": "animation" in genres or "anime" in genres,
         "isJapanese": lang.get("name", "").lower() == "japanese",
         "genres": genres,
+        # Other names TVDB knows the series by — lets the grader match a romaji
+        # AniList title against an entry whose primary title is the English one.
+        "alternateTitles": [a.get("title", "") for a in (s.get("alternateTitles") or [])],
     }
 
 

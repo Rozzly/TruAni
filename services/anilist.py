@@ -14,6 +14,16 @@ SEASONS = {1: "WINTER", 2: "WINTER", 3: "WINTER",
 SEASON_ORDER = ["WINTER", "SPRING", "SUMMER", "FALL"]
 
 
+class AniListRateLimited(Exception):
+    """Raised on HTTP 429 in interactive mode so callers can surface a
+    'try again shortly' message instead of blocking the request thread for the
+    full Retry-After window. The scheduler path (interactive=False) still backs
+    off and retries."""
+    def __init__(self, retry_after):
+        self.retry_after = retry_after
+        super().__init__(f"AniList rate-limited; retry after {retry_after}s")
+
+
 def _override_season():
     """Parse the manually-pinned current season from config, or None if unset/invalid."""
     import config
@@ -81,7 +91,7 @@ def count_upcoming_titles(season, year):
     return sum(1 for m in media if not (m.get("duration") and 0 < m["duration"] <= 15))
 
 
-def year_has_listings(year):
+def year_has_listings(year, interactive=False):
     """True if AniList lists any TV/ONA anime for the given year (across all
     seasons). Used to decide which year tabs to surface for scanning."""
     query = """
@@ -92,11 +102,11 @@ def year_has_listings(year):
         }
     }
     """
-    data = _request(query, {"year": year})
+    data = _request(query, {"year": year}, interactive=interactive)
     return bool((data.get("data", {}).get("Page", {}) or {}).get("media"))
 
 
-def fetch_seasonal_anime(season, year):
+def fetch_seasonal_anime(season, year, interactive=False):
     """Fetch all TV and ONA anime for a given season/year from AniList.
     Excludes shorts (episode duration <= 15 minutes when known)."""
     query = """
@@ -151,7 +161,7 @@ def fetch_seasonal_anime(season, year):
 
     while has_next:
         variables = {"page": page, "season": season.upper(), "seasonYear": year}
-        data = _request(query, variables)
+        data = _request(query, variables, interactive=interactive)
 
         page_data = data["data"]["Page"]
         all_media.extend(page_data["media"])
@@ -201,7 +211,7 @@ def _has_prequel(media):
 
 
 
-def _request(query, variables, retries=3):
+def _request(query, variables, retries=3, interactive=False):
     for attempt in range(retries):
         try:
             resp = _session.post(
@@ -217,6 +227,10 @@ def _request(query, variables, retries=3):
 
         if resp.status_code == 429:
             retry_after = min(int(resp.headers.get("Retry-After", 60)), 300)
+            # Don't freeze an interactive request thread for minutes — let the
+            # caller surface it. Background callers still back off and retry.
+            if interactive:
+                raise AniListRateLimited(retry_after)
             time.sleep(retry_after)
             continue
 

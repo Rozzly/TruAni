@@ -7,7 +7,7 @@ import time as _time
 from datetime import datetime, timezone
 
 import db
-from services.anilist import current_season, next_season, fetch_seasonal_anime
+from services.anilist import current_season, next_season, fetch_seasonal_anime, AniListRateLimited
 from services.mapping import resolve_tvdb_id
 from services.sonarr import lookup_series, get_existing_series
 
@@ -94,7 +94,7 @@ def _anilist_year_horizon(cur_year):
         y = cur_year
         while y - cur_year < 5:  # safety cap on look-ahead
             y += 1
-            if not year_has_listings(y):
+            if not year_has_listings(y, interactive=True):
                 break
             years.add(y)
         db.set_cache("anilist_year_horizon", sorted(years), ttl_seconds=21600)
@@ -163,8 +163,11 @@ def sse_format(generator):
 
 # --- Refresh logic ---
 
-def refresh_generator(season=None, year=None, fresh=False):
-    """Generator that yields event dicts during refresh."""
+def refresh_generator(season=None, year=None, fresh=False, interactive=False):
+    """Generator that yields event dicts during refresh.
+
+    interactive=True (the SSE/dashboard path) surfaces an AniList rate-limit as
+    an error event instead of blocking the request thread for minutes."""
 
     def event(step, detail, progress=None, **extra):
         d = {"step": step, "detail": detail, **extra}
@@ -178,7 +181,10 @@ def refresh_generator(season=None, year=None, fresh=False):
     yield event("fetch", f"Fetching {season.capitalize()} {year} from AniList...", progress=2)
 
     try:
-        anime_list = fetch_seasonal_anime(season, year)
+        anime_list = fetch_seasonal_anime(season, year, interactive=interactive)
+    except AniListRateLimited as e:
+        yield event("error", f"AniList is rate-limiting requests — try again in about {e.retry_after}s")
+        return
     except Exception as e:
         yield event("error", f"AniList fetch failed: {e}")
         return

@@ -162,7 +162,7 @@ def api_refresh_stream():
         try:
             with _status_lock:
                 core._refresh_status = "running"
-            for sse_event in sse_format(refresh_generator(season, year, fresh=fresh)):
+            for sse_event in sse_format(refresh_generator(season, year, fresh=fresh, interactive=True)):
                 yield sse_event
             set_last_refresh(datetime.now(timezone.utc).isoformat())
             with _status_lock:

@@ -26,6 +26,10 @@ def _connect():
     conn = sqlite3.connect(_db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    # Wait up to 5s for a competing writer instead of failing immediately with
+    # "database is locked". WAL serializes writes, and the refresh thread-pool
+    # writes concurrently with the main thread, so collisions are expected.
+    conn.execute("PRAGMA busy_timeout=5000")
     _local.conn = conn
     return conn
 
@@ -267,12 +271,14 @@ def upsert_anime(anime):
         conn.execute("""
             INSERT INTO anime
                 (anilist_id, title_english, title_romaji, title_native, synonyms,
-                 format, season, season_year, episodes, description, genres, score,
+                 format, season, season_year, episodes, episodes_source, description, genres, score,
                  anilist_url, cover_url, cover_url_lg,
                  tvdb_id, tvdb_title, tmdb_id, mapping_source, sonarr_status, season_number, updated_at)
             VALUES
                 (:anilist_id, :title_english, :title_romaji, :title_native, :synonyms,
-                 :format, :season, :season_year, :episodes, :description, :genres, :score,
+                 :format, :season, :season_year, :episodes,
+                 CASE WHEN :episodes IS NOT NULL AND :episodes > 0 THEN 'anilist' ELSE NULL END,
+                 :description, :genres, :score,
                  :anilist_url, :cover_url, :cover_url_lg,
                  :tvdb_id, :tvdb_title, :tmdb_id, :mapping_source, :sonarr_status, :season_number, :updated_at)
             ON CONFLICT(anilist_id) DO UPDATE SET

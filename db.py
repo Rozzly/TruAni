@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import json
+import functools
 import threading
 from datetime import datetime, timezone, timedelta
 
@@ -38,6 +39,21 @@ def close_connection():
         except Exception:
             pass
         _local.conn = None
+
+
+def closes_connection(fn):
+    """Decorator for background entry points (scheduler jobs, thread-pool tasks)
+    that run outside Flask's request lifecycle, where teardown_appcontext never
+    fires. Closes this thread's DB connection when the function returns, so
+    long-lived worker threads don't hold a SQLite connection open indefinitely.
+    The connection is recreated lazily on the thread's next DB call."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            close_connection()
+    return wrapper
 
 
 def init():

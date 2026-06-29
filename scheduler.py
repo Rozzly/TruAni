@@ -3,6 +3,7 @@
 import logging
 
 import config
+import db
 from core import refresh_data
 from services.anilist import current_season, advance_season, count_upcoming_titles
 
@@ -18,6 +19,7 @@ UPCOMING_MIN_TITLES = 10
 UPCOMING_LOOKAHEAD = 4
 
 
+@db.closes_connection
 def scheduled_refresh():
     """Refresh the current season plus every upcoming season AniList already lists.
     Walks forward from the current season so newly-announced seasons (e.g. Fall
@@ -68,7 +70,7 @@ def start_scheduler():
 
     from apscheduler.triggers.cron import CronTrigger as _CronTrigger
     from services.updater import check_for_update
-    _scheduler.add_job(lambda: check_for_update(force=True),
+    _scheduler.add_job(db.closes_connection(lambda: check_for_update(force=True)),
                        _CronTrigger(day_of_week="sun", hour=2, minute=0),
                        id="update_check", replace_existing=True)
 

@@ -6,7 +6,8 @@ services:
     ports:
       - "5656:5656"
     volumes:
-      - .:/app
+      # Only persistent state is mounted. App code lives in the image, so an
+      # update is `git pull && docker compose up -d --build` — not a live mount.
       - ./data:/app/data
     env_file:
       - .env

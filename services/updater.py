@@ -335,10 +335,32 @@ def _read(path):
         return ""
 
 
+def _is_containerized():
+    """True when running inside a Docker/OCI container.
+
+    In-place self-update is meaningless here: the code is baked into the image,
+    and any file swap lands only in the container's writable layer — lost the
+    moment the container is recreated (the usual way images get updated). The
+    Dockerfile sets TRUANI_DEPLOYMENT=docker; ``/.dockerenv`` is a fallback for
+    images built without it."""
+    if os.getenv("TRUANI_DEPLOYMENT", "").lower() == "docker":
+        return True
+    return os.path.exists("/.dockerenv")
+
+
 def perform_update():
     """Download, verify, validate, swap in, and prepare to restart.
     Returns a result dict; on success ``restart_required`` is True and the caller
     should invoke ``schedule_restart()``."""
+    if _is_containerized():
+        return {
+            "success": False,
+            "restart_required": False,
+            "message": ("This instance runs in Docker — in-app update is disabled "
+                        "for containers. Update by rebuilding the image: "
+                        "`git pull && docker compose up -d --build` (your data is "
+                        "preserved in the ./data volume). See the README."),
+        }
     try:
         return _perform_update()
     except Exception as e:

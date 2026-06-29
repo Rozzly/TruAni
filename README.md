@@ -85,22 +85,29 @@ Open `http://<your-host>:5656` in your browser. The default credentials are `tru
 
 ## Updating
 
-TruAni checks for updates weekly. When a new version is available, a banner appears on the dashboard.
+TruAni checks for updates weekly and shows a banner on the dashboard when a new version is available. How you apply an update depends on how you deployed it.
 
-**From the web UI:** Go to Settings > Updates and click "Update Now". The app pulls the latest code, installs any new dependencies, and restarts itself. That's it.
+### LXC / bare-metal
 
-**From the command line (LXC):**
+From the web UI: go to **Settings > Updates** and click **Update Now**. The app downloads the latest release, verifies it, installs any new dependencies, and restarts itself in place.
+
+Or from the command line:
 
 ```
 pct exec <CTID> -- update
 ```
 
-**Docker:**
+### Docker
+
+In-app **Update Now** is intentionally disabled for Docker: container code is baked into the image, so a self-update would be discarded the moment the container is recreated. Instead, rebuild the image from the latest source:
 
 ```
-git pull origin main
-docker compose up --build -d
+cd TruAni
+git pull
+docker compose up -d --build
 ```
+
+Your database and settings live in the `./data` volume and are preserved across the rebuild. The `--build` flag is required — without it Compose re-runs the existing image and the new code is ignored.
 
 ## How it works
 

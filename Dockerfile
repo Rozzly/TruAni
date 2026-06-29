@@ -2,6 +2,11 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
+# Marks this as a container deployment so the in-app updater redirects users to
+# an image rebuild instead of attempting a self-update (which a container wipes
+# on recreate). See services/updater.py:_is_containerized().
+ENV TRUANI_DEPLOYMENT=docker
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

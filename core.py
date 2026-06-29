@@ -8,8 +8,11 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import db
-from services.anilist import current_season, next_season, fetch_seasonal_anime, AniListRateLimited
-from services.mapping import resolve_tvdb_id
+from services.anilist import (
+    current_season, next_season, fetch_seasonal_anime, AniListRateLimited,
+    year_has_listings, SEASON_ORDER,
+)
+from services.mapping import resolve_tvdb_id, sonarr_lookup
 from services.sonarr import lookup_series, get_existing_series
 
 log = logging.getLogger("truani")
@@ -128,7 +131,6 @@ def _anilist_year_horizon(cur_year):
     cached = db.get_cache("anilist_year_horizon")
     if cached is not None:
         return set(cached)
-    from services.anilist import year_has_listings
     years = {cur_year}
     try:
         y = cur_year
@@ -152,7 +154,6 @@ def build_season_nav(active_season, active_year):
     scanned, while a year AniList hasn't added yet (2028) stays hidden. Each
     shown year offers all four seasons; seasons with no data are navigable but
     empty."""
-    from services.anilist import SEASON_ORDER
     cur_season, cur_year = current_season()
     nxt_season, nxt_year = next_season()
 
@@ -270,7 +271,6 @@ def refresh_generator(season=None, year=None, fresh=False, interactive=False):
     existing_records = {r["anilist_id"]: r for r in db.get_anime_by_anilist_ids([a["anilist_id"] for a in active_list])}
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from services.mapping import _sonarr_lookup
 
     mapped = 0
     unmapped = 0
@@ -294,7 +294,7 @@ def refresh_generator(season=None, year=None, fresh=False, interactive=False):
 
     def _full_resolve(item):
         idx, anime, existing = item
-        tvdb_id, source, tvdb_title = _sonarr_lookup(anime)
+        tvdb_id, source, tvdb_title = sonarr_lookup(anime)
         if tvdb_id and not tvdb_title:
             tvdb_title = _fetch_title(anime, existing, tvdb_id)
         return idx, anime, existing, tvdb_id, source, tvdb_title

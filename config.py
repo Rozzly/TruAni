@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Imported after load_dotenv() so db reads DB_PATH from the loaded .env.
+# db does not import config, so this is a one-directional dependency (no cycle).
+import db
+
 # App version (read from VERSION file)
 _version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
 try:
@@ -38,7 +42,6 @@ def _get(key, env_key=None, default=""):
     cached = _settings_cache.get(key)
     if cached and now <= cached[1]:
         return cached[0]
-    import db
     val = db.get_setting(key)
     if val:
         _settings_cache[key] = (val, now + _CACHE_TTL)
@@ -54,7 +57,6 @@ def clear_settings_cache():
 
 
 def get_secret_key():
-    import db
     key = db.get_setting("secret_key")
     if not key:
         key = secrets.token_hex(32)

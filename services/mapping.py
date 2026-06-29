@@ -8,7 +8,10 @@ Lookup chain (in order):
 """
 
 import re
+
 import db
+from services.sonarr import search_series
+from services.titleutil import strip_season_suffix
 
 
 def resolve_tvdb_id(anime, existing=None, skip_sonarr=False):
@@ -34,7 +37,7 @@ def resolve_tvdb_id(anime, existing=None, skip_sonarr=False):
         return None, None, None, existing
 
     # 2. Sonarr search (queries TVDB via Sonarr — returns title too)
-    tvdb_id, source, title = _sonarr_lookup(anime)
+    tvdb_id, source, title = sonarr_lookup(anime)
     if tvdb_id:
         return tvdb_id, source, title, existing
 
@@ -44,7 +47,7 @@ def resolve_tvdb_id(anime, existing=None, skip_sonarr=False):
 def rescan_tvdb_id(anime):
     """Force a fresh lookup, ignoring cached results.
     Returns (tvdb_id, source, title) — title may be None if not found."""
-    tvdb_id, source, title = _sonarr_lookup(anime)
+    tvdb_id, source, title = sonarr_lookup(anime)
     if tvdb_id:
         return tvdb_id, source, title
     return None, None, None
@@ -52,13 +55,10 @@ def rescan_tvdb_id(anime):
 
 # --- Sonarr lookup (searches TVDB via Sonarr) ---
 
-def _sonarr_lookup(anime):
+def sonarr_lookup(anime):
     """Search Sonarr by title to find TVDB ID. Returns (tvdb_id, 'sonarr', title) or (None, None, None).
     Validates results: must be anime, year within range, and title must have meaningful overlap.
     Searches with base title (stripped of season/sequel suffixes) for better TVDB matches."""
-    from services.sonarr import search_series
-    from services.titleutil import strip_season_suffix
-
     titles = []
     if anime.get("title_english"):
         titles.append(anime["title_english"])

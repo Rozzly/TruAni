@@ -2,6 +2,9 @@ import time
 import requests
 from datetime import datetime
 
+import config
+from services.titleutil import extract_season_number
+
 ANILIST_API_URL = "https://graphql.anilist.co"
 _session = requests.Session()
 
@@ -26,7 +29,6 @@ class AniListRateLimited(Exception):
 
 def _override_season():
     """Parse the manually-pinned current season from config, or None if unset/invalid."""
-    import config
     raw = (config.current_season_override() or "").strip()
     if not raw:
         return None
@@ -167,8 +169,6 @@ def fetch_seasonal_anime(season, year, interactive=False):
         all_media.extend(page_data["media"])
         has_next = page_data["pageInfo"]["hasNextPage"]
         page += 1
-
-    from services.titleutil import extract_season_number
 
     results = []
     for m in all_media:

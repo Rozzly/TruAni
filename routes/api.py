@@ -23,6 +23,9 @@ from routes.auth import login_required
 from services.sonarr import test_connection, sync_all, lookup_series
 from services.mapping import rescan_tvdb_id
 from services.titleutil import display_title
+from services.anilist import SEASON_ORDER, next_season
+from services.updater import check_for_update, get_changelog, perform_update, schedule_restart
+from scheduler import reschedule
 
 log = logging.getLogger("truani")
 
@@ -100,8 +103,6 @@ def api_set_current_season():
     """Pin a season as the current ('now') season. Persists an override that
     cascades through current_season()/next_season(), so the tab bar re-labels
     earlier seasons as past and surfaces the new 'next' tab automatically."""
-    from services.anilist import SEASON_ORDER, next_season
-
     data = request.get_json(silent=True) or {}
     season = (data.get("season") or "").upper()
     year = data.get("year")
@@ -377,7 +378,6 @@ def api_settings():
     config.clear_settings_cache()
 
     if to_save.keys() & {"refresh_frequency", "refresh_time", "refresh_day"}:
-        from scheduler import reschedule
         reschedule()
 
     return jsonify({"status": "ok", "message": "Settings saved"})
@@ -492,7 +492,6 @@ def api_status():
 @api_bp.route("/update/check")
 @login_required
 def api_update_check():
-    from services.updater import check_for_update
     force = request.args.get("force") == "1"
     return jsonify(check_for_update(force=force))
 
@@ -500,14 +499,12 @@ def api_update_check():
 @api_bp.route("/update/changelog")
 @login_required
 def api_update_changelog():
-    from services.updater import get_changelog
     return jsonify(get_changelog())
 
 
 @api_bp.route("/update/apply", methods=["POST"])
 @login_required
 def api_update_apply():
-    from services.updater import perform_update, schedule_restart
     result = perform_update()
     if result.get("success") and result.get("restart_required"):
         schedule_restart()

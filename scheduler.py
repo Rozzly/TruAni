@@ -6,6 +6,7 @@ import config
 import db
 from core import refresh_data
 from services.anilist import current_season, advance_season, count_upcoming_titles
+from services.updater import check_for_update
 
 log = logging.getLogger("truani")
 
@@ -69,7 +70,6 @@ def start_scheduler():
     _scheduler.add_job(scheduled_refresh, trigger, id="refresh", replace_existing=True)
 
     from apscheduler.triggers.cron import CronTrigger as _CronTrigger
-    from services.updater import check_for_update
     _scheduler.add_job(db.closes_connection(lambda: check_for_update(force=True)),
                        _CronTrigger(day_of_week="sun", hour=2, minute=0),
                        id="update_check", replace_existing=True)

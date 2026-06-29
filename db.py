@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 import json
 import threading
@@ -9,6 +10,11 @@ import bcrypt
 _db_path = os.getenv("DB_PATH", "data/truani.db")
 _local = threading.local()
 _DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
+
+# Bump when adding a migration step in _run_migrations(). Tracked per-database
+# via PRAGMA user_version.
+SCHEMA_VERSION = 1
+_SAFE_COL_RE = re.compile(r'^[a-z_]+$')
 
 
 def _connect():
@@ -58,6 +64,7 @@ def init():
                 tmdb_id       INTEGER,
                 mapping_source TEXT,
                 sonarr_status TEXT DEFAULT 'pending',
+                episodes_source   TEXT,
                 season_number     INTEGER DEFAULT 0,
                 ignored       INTEGER DEFAULT 0,
                 updated_at    TEXT
@@ -81,8 +88,8 @@ def init():
             );
         """)
 
-    # Auto-migrate: add columns that may be missing from older schemas
-    _migrate()
+        # Apply ordered migrations within the same connection/transaction.
+        _run_migrations(conn)
 
     print(f"[DB] Initialized at {_db_path}")
 
@@ -91,8 +98,24 @@ def init():
         create_user("truani", "truani")
 
 
-def _migrate():
-    """Add any missing columns to existing tables. Safe to run repeatedly."""
+def _run_migrations(conn):
+    """Apply ordered, idempotent migrations based on PRAGMA user_version.
+
+    A fresh database is created at the current schema (CREATE TABLE above), so
+    this is effectively a no-op for it. It only does real work when upgrading a
+    database written by an older version. Add a new `if version < N:` block and
+    bump SCHEMA_VERSION for each future schema change."""
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+
+    if version < 1:
+        # v1: backfill columns introduced after the original 0.1.0 schema.
+        _ensure_anime_columns(conn)
+
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+
+def _ensure_anime_columns(conn):
+    """Add any anime columns missing from a legacy schema. Idempotent."""
     anime_columns = {
         "title_native": "TEXT",
         "synonyms": "TEXT",
@@ -106,15 +129,13 @@ def _migrate():
         "season_number": "INTEGER DEFAULT 0",
         "episodes_source": "TEXT",
     }
-    with _connect() as conn:
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(anime)").fetchall()}
-        _SAFE_COL_RE = __import__("re").compile(r'^[a-z_]+$')
-        for col, col_type in anime_columns.items():
-            if col not in existing:
-                if not _SAFE_COL_RE.match(col):
-                    raise ValueError(f"Invalid column name: {col}")
-                conn.execute(f"ALTER TABLE anime ADD COLUMN {col} {col_type}")
-                print(f"[DB] Migrated: added anime.{col}")
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(anime)").fetchall()}
+    for col, col_type in anime_columns.items():
+        if col not in existing:
+            if not _SAFE_COL_RE.match(col):
+                raise ValueError(f"Invalid column name: {col}")
+            conn.execute(f"ALTER TABLE anime ADD COLUMN {col} {col_type}")
+            print(f"[DB] Migrated: added anime.{col}")
 
 
 # --- Users ---

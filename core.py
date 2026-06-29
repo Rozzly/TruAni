@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 import time as _time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import db
@@ -15,14 +16,53 @@ log = logging.getLogger("truani")
 
 # --- Refresh state ---
 
-_refresh_lock = threading.Lock()
-_refresh_status = "idle"
-_status_lock = threading.Lock()
+class RefreshBusy(Exception):
+    """Raised by RefreshManager.run() when a refresh is already in progress."""
+
+
+class _RefreshManager:
+    """Single source of truth for refresh concurrency and status. Both the
+    non-streaming (scheduler) and streaming (SSE) entry points enter through
+    run(), so the lock and the status are owned in exactly one place."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._status_lock = threading.Lock()
+        self._status = "idle"
+
+    @property
+    def status(self):
+        with self._status_lock:
+            return self._status
+
+    def _set(self, value):
+        with self._status_lock:
+            self._status = value
+
+    @contextmanager
+    def run(self):
+        if not self._lock.acquire(blocking=False):
+            raise RefreshBusy()
+        self._set("running")
+        try:
+            yield
+        except GeneratorExit:
+            self._set("idle")          # client disconnected mid-stream
+            raise
+        except Exception:
+            self._set("error")
+            raise
+        else:
+            self._set("idle")
+        finally:
+            self._lock.release()
+
+
+refresh_manager = _RefreshManager()
 
 
 def get_refresh_status():
-    with _status_lock:
-        return _refresh_status
+    return refresh_manager.status
 
 
 def get_last_refresh():
@@ -305,34 +345,22 @@ def refresh_generator(season=None, year=None, fresh=False, interactive=False):
 
 def refresh_data(season=None, year=None):
     """Non-streaming refresh for scheduler use. Returns summary dict."""
-    global _refresh_status
-
-    if not _refresh_lock.acquire(blocking=False):
-        return {"status": "busy", "message": "Refresh already in progress"}
-
+    result = None
     try:
-        with _status_lock:
-            _refresh_status = "running"
-        result = None
-        for event_dict in refresh_generator(season, year):
-            if event_dict.get("step") in ("done", "error"):
-                result = event_dict
-
-        set_last_refresh(datetime.now(timezone.utc).isoformat())
-        with _status_lock:
-            _refresh_status = "idle"
-
-        if result and result.get("step") == "done":
-            return {"status": "ok", "message": result["detail"],
-                    "total": result.get("total", 0), "mapped": result.get("mapped", 0), "unmapped": result.get("unmapped", 0)}
-        elif result and result.get("step") == "error":
-            return {"status": "error", "message": result["detail"]}
-        return {"status": "ok", "message": "Refresh complete"}
-
+        with refresh_manager.run():
+            for event_dict in refresh_generator(season, year):
+                if event_dict.get("step") in ("done", "error"):
+                    result = event_dict
+            set_last_refresh(datetime.now(timezone.utc).isoformat())
+    except RefreshBusy:
+        return {"status": "busy", "message": "Refresh already in progress"}
     except Exception as e:
-        with _status_lock:
-            _refresh_status = "error"
         log.error("Refresh error: %s", e)
         return {"status": "error", "message": "An unexpected error occurred during refresh"}
-    finally:
-        _refresh_lock.release()
+
+    if result and result.get("step") == "done":
+        return {"status": "ok", "message": result["detail"],
+                "total": result.get("total", 0), "mapped": result.get("mapped", 0), "unmapped": result.get("unmapped", 0)}
+    elif result and result.get("step") == "error":
+        return {"status": "error", "message": result["detail"]}
+    return {"status": "ok", "message": "Refresh complete"}

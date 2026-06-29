@@ -17,7 +17,7 @@ from core import (
     default_season, display_name, compute_stats,
     refresh_data, refresh_generator, sse_format,
     get_refresh_status, set_last_refresh, get_last_refresh,
-    _refresh_lock, _refresh_status, _status_lock,
+    refresh_manager, RefreshBusy,
 )
 from routes.auth import login_required
 from services.sonarr import test_connection, sync_all, lookup_series
@@ -152,31 +152,18 @@ def api_refresh_stream():
     year = request.args.get("year", type=int) or None
     fresh = request.args.get("fresh") == "1"
 
-    if not _refresh_lock.acquire(blocking=False):
-        def busy():
-            yield 'data: {"step":"error","detail":"Refresh already in progress"}\n\n'
-        return Response(busy(), mimetype="text/event-stream")
-
     def generate():
-        import core
         try:
-            with _status_lock:
-                core._refresh_status = "running"
-            for sse_event in sse_format(refresh_generator(season, year, fresh=fresh, interactive=True)):
-                yield sse_event
-            set_last_refresh(datetime.now(timezone.utc).isoformat())
-            with _status_lock:
-                core._refresh_status = "idle"
-        except GeneratorExit:
-            with _status_lock:
-                core._refresh_status = "idle"
+            with refresh_manager.run():
+                for sse_event in sse_format(refresh_generator(season, year, fresh=fresh, interactive=True)):
+                    yield sse_event
+                set_last_refresh(datetime.now(timezone.utc).isoformat())
+        except RefreshBusy:
+            yield 'data: {"step":"error","detail":"Refresh already in progress"}\n\n'
         except Exception as e:
+            # GeneratorExit (client disconnect) is a BaseException and passes through.
             log.error("SSE refresh error: %s", e)
             yield f'data: {json.dumps({"step":"error","detail":"An unexpected error occurred"})}\n\n'
-            with _status_lock:
-                core._refresh_status = "error"
-        finally:
-            _refresh_lock.release()
 
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

@@ -49,6 +49,9 @@ def rate_limit(key_prefix):
             key = f"{key_prefix}:{ip}"
             now = _time.monotonic()
             with _api_rate_lock:
+                # Prune expired windows so the table can't grow unboundedly.
+                for k in [k for k, (_, s) in _api_rate.items() if now - s > _API_RATE_WINDOW]:
+                    del _api_rate[k]
                 entry = _api_rate.get(key)
                 if entry:
                     count, start = entry

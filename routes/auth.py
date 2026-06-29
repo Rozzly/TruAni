@@ -21,16 +21,23 @@ _LOGIN_MAX_ATTEMPTS = 10
 _LOGIN_LOCKOUT_SECONDS = 900
 
 
+def _prune_login_attempts(now):
+    """Drop entries whose lockout window has expired. Caller holds _login_lock.
+    Bounds memory to IPs that failed within the window — without this, an IP that
+    fails once and never returns would linger forever."""
+    for ip in [ip for ip, (_, first) in _login_attempts.items()
+               if now - first > _LOGIN_LOCKOUT_SECONDS]:
+        del _login_attempts[ip]
+
+
 def _check_rate_limit(ip):
     now = _time.monotonic()
     with _login_lock:
+        _prune_login_attempts(now)
         entry = _login_attempts.get(ip)
         if not entry:
             return False, 0
         count, first_failure = entry
-        if now - first_failure > _LOGIN_LOCKOUT_SECONDS:
-            del _login_attempts[ip]
-            return False, 0
         if count >= _LOGIN_MAX_ATTEMPTS:
             return True, int(_LOGIN_LOCKOUT_SECONDS - (now - first_failure))
     return False, 0
@@ -39,6 +46,7 @@ def _check_rate_limit(ip):
 def _record_failure(ip):
     now = _time.monotonic()
     with _login_lock:
+        _prune_login_attempts(now)
         entry = _login_attempts.get(ip)
         if entry and now - entry[1] <= _LOGIN_LOCKOUT_SECONDS:
             _login_attempts[ip] = (entry[0] + 1, entry[1])
